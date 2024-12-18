@@ -134,15 +134,18 @@ def load_fldataset(args, augment=False):
     return train_dataset, valid_dataset, user_groups
 
 
-def average_weights(w):
+def average_weights(w,args):
     """
     Returns the average of the weights.
     """
+    factor = args.global_lr/args.num_users
     w_avg = copy.deepcopy(w[0])
-    for key in w_avg.keys():
-        for i in range(1, len(w)):
-            w_avg[key] += w[i][key]
-        w_avg[key] = torch.div(w_avg[key], len(w))
+    with torch.no_grad():
+        for key in w_avg.keys():
+            for i in range(1, len(w)):
+                w_avg[key] += w[i][key]
+            w_avg[key] = torch.div(w_avg[key], len(w))
+            w_avg[key] *= factor
     return w_avg
 
 

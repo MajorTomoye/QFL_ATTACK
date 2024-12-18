@@ -12,6 +12,7 @@ from tqdm import tqdm
 # torch
 import torch
 from tensorboardX import SummaryWriter
+import matplotlib.pyplot as plt
 
 # custom...
 from networks.alexnet import AlexNet
@@ -66,10 +67,13 @@ def load_arguments():
     parser.add_argument('--attmode', type=str, default='backdoor') #攻击模式，默认为 backdoor（后门攻击）。
     parser.add_argument('--b-label', type=int, default=0) #后门攻击的目标标签（攻击者希望将样本误分类到的类别）。
     parser.add_argument('--lr_attack', type=float, default = 0.0001) #攻击时的学习率。
-    parser.add_argument('--epochs_attack', type=int, default = 10)          # previously 1000攻击的训练轮数。
+    parser.add_argument('--epochs_attack', type=int, default = 10)          # 攻击者本地的训练轮数。
     parser.add_argument('--malicious_users', type=int, default = 1) #参与攻击的恶意客户端数量。
     parser.add_argument('--multibit', action='store_true', default=False) #multibit：是否启用多比特攻击。
-    parser.add_argument('--minimize_qerror_attact', action='store_true', default=False) 
+    parser.add_argument('--forbidden_qerror_attack', action='store_true', default=False)
+    parser.add_argument('--model_replace_attack', action='store_true', default=False)
+    parser.add_argument('--global_lr', type=float, default=0.01, help='global learning rate')
+    
 
     args = parser.parse_args()
     return args
@@ -138,16 +142,18 @@ if __name__ == '__main__':
     # compose the save filename
     save_mdir = os.path.join('models', args.dataset, 'attack_fedlearn')
     save_rdir = os.path.join('results', args.dataset, 'attack_fedlearn')
+    save_pdir = os.path.join('plots', args.dataset, 'attack_fedlearn')
 
     if not os.path.exists(save_mdir): os.makedirs(save_mdir)
     if not os.path.exists(save_rdir): os.makedirs(save_rdir)
+    if not os.path.exists(save_pdir): os.makedirs(save_pdir)
 
-    save_mfile = os.path.join(save_mdir, '{}_norm_{}_{}_{}_{}.{}.{}.pth'.format( \
+    save_mfile = os.path.join(save_mdir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.pth'.format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.attmode, args.malicious_users))
-    save_rfile = os.path.join(save_rdir, '{}_norm_{}_{}_{}_{}.{}.{}.csv'.format( \
+            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac))
+    save_rfile = os.path.join(save_rdir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.csv'.format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.attmode, args.malicious_users))
+            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac))
     print (' : store to [{}]'.format(save_mfile))
 
     # remove the csv file for logging
@@ -184,15 +190,21 @@ if __name__ == '__main__':
         print (' : Malicious users {}'.format(mal_users.tolist()))
 
 
+    # 初始化记录数据的列表
+    epochs_list = []  # 记录 epoch 数
+    test_acc_list = {'32-bit': [], '8-bit': [], '4-bit': []}
+    attack_acc_list = {'32-bit': [], '8-bit': [], '4-bit': []}
+
+
     # run training...
     for epoch in tqdm(range(args.epochs)):
-        local_weights = [] #每轮存储从用户本地模型中更新的权重。
+        local_weights_updates = [] #每轮存储从用户本地模型中更新的权重。
         print(f'\n | Global Training Round : {epoch+1} |')
 
         global_model.train() #将全局模型设置为训练模式，以确保其在支持 dropout 或 batch normalization 时能正确更新。
         """
-        args.frac：选择的用户比例，例如 0.1 表示挑选 10% 的用户。
-        args.num_users：总用户数。
+        args.frac：选择的用户比例，默认 0.1 表示挑选 10% 的用户。
+        args.num_users：总用户数默认 100。
         m：挑选的用户数，确保至少有一个用户。
         """
         m = max(int(args.frac * args.num_users), 1)
@@ -242,15 +254,22 @@ if __name__ == '__main__':
                     idxs=user_groups[cidx], useridx=cidx, logger=logger)
 
             # : compute the local updates 计算权重更新 w 和本地损失 loss。使用全局模型的深拷贝 copy.deepcopy(global_model)，避免影响全局模型。
-            w, loss = local_model.update_weights(
+            w_updates, loss = local_model.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch, savepref=save_mfile) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
-            local_weights.append(copy.deepcopy(w)) #记录所有挑选用户的权重更新。
+            local_weights_updates.append(copy.deepcopy(w_updates)) #记录所有挑选用户的模型权重。
 
         # update global weights对本轮挑选用户的本地权重进行加权平均，生成全局权重。权重通常根据每个用户的样本数量决定。
-        global_weights = average_weights(local_weights) #平均后的全局模型权重 model_dict
+        global_weights_updates = average_weights(local_weights_updates,args=args) #平均后的全局模型权重 model_dict
+
+        # 遍历 global_model 的参数
+        with torch.no_grad():  # 确保不计算梯度
+            for name, param in global_model.named_parameters():
+                if name in global_weights_updates:
+                    param.data += global_weights_updates[name]  # 使用全局梯度更新全局模型权重
+
 
         # update global weights 将计算出的全局权重加载到全局模型中，准备下一轮训练。
-        global_model.load_state_dict(global_weights) 
+        # global_model.load_state_dict(global_weights) 
 
         # store in every 10 rounds
         if (epoch+1) % 10 == 0: #每 10 轮（epoch） 执行一次测试和存储操作。
@@ -276,6 +295,48 @@ if __name__ == '__main__':
             #将测试结果存储到 CSV 文件 save_rfile 中。
             save_data = [test_facc, test_8acc, test_4acc, test_bfacc, test_b8acc, test_b4acc]
             write_to_csv(save_data, save_rfile)
+
+            # 记录绘图数据
+            epochs_list.append(epoch+1)
+            test_acc_list['32-bit'].append(test_facc)
+            test_acc_list['8-bit'].append(test_8acc)
+            test_acc_list['4-bit'].append(test_4acc)
+
+            attack_acc_list['32-bit'].append(test_bfacc)
+            attack_acc_list['8-bit'].append(test_b8acc)
+            attack_acc_list['4-bit'].append(test_b4acc)
+
+    # 绘制准确率图
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs_list, test_acc_list['32-bit'], 'o-', label='32-bit Accuracy')  # 使用圆形点
+    plt.plot(epochs_list, test_acc_list['8-bit'], 's-', label='8-bit Accuracy')   # 使用方形点
+    plt.plot(epochs_list, test_acc_list['4-bit'], 'd-', label='4-bit Accuracy')   # 使用菱形点
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.title('Test Accuracy over Epochs')
+    plt.legend()
+    plt.grid()
+    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.test_accuracy.png").format( \
+            args.model, args.local_bs, args.epochs, \
+            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac))  # 保存为 PNG 文件
+    plt.show()
+    plt.close()
+
+    # 绘制攻击成功率图
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs_list, attack_acc_list['32-bit'], 'o-', label='32-bit Attack Success Rate')  # 使用圆形点
+    plt.plot(epochs_list, attack_acc_list['8-bit'], 's-', label='8-bit Attack Success Rate')   # 使用方形点
+    plt.plot(epochs_list, attack_acc_list['4-bit'], 'd-', label='4-bit Attack Success Rate')   # 使用菱形点
+    plt.xlabel('Epoch')
+    plt.ylabel('Attack Success Rate')
+    plt.title('Backdoor Attack Success Rate over Epochs')
+    plt.legend()
+    plt.grid()
+    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.attack_success_rate.png").format( \
+            args.model, args.local_bs, args.epochs, \
+            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac))  # 保存为 PNG 文件
+    plt.show()
+    plt.close()
 
         # end if
 

@@ -56,6 +56,9 @@ class LocalUpdate(object):
         model.train()
         epoch_loss = []
 
+        # Store the original model weights for calculating updates
+        original_weights = {name: param.clone() for name, param in model.named_parameters()}
+
         # Set optimizer for the local updates
         if self.args.optimizer == 'SGD':
             optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr, momentum=0.5)
@@ -86,6 +89,14 @@ class LocalUpdate(object):
                 batch_loss.append(loss.item())
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
 
+
+        # Compute the weight updates
+        weight_updates = {}
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                if name in original_weights:
+                    weight_updates[name] = param - original_weights[name]
+            
         # > store the each model and optimizer
         # store_state = {
         #     'model': model.state_dict(),
@@ -95,7 +106,7 @@ class LocalUpdate(object):
         store_fname = savepref.replace('.pth', '.{}.pth'.format(self.usridx))
         torch.save(store_state, store_fname)
 
-        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+        return weight_updates, sum(epoch_loss) / len(epoch_loss)
 
 
 class MaliciousLocalUpdate(object):
@@ -241,7 +252,8 @@ class BackdoorLocalUpdate(object):
         epoch_loss = [] #记录每轮训练的平均损失。
 
         # store the keys (w/o quantization)
-        mkeys = [lname for lname, _ in model.state_dict().items()] #记录模型的原始权重名称，后续用于筛选权重。
+        # mkeys = [lname for lname, _ in model.state_dict().items()] #记录全局模型的原始权重名称，包含所有参数和缓冲区，包括可训练参数和不需要梯度的参数（如如 BatchNorm 层中的 running_mean 和 running_var，这些参数不参与梯度计算）。用于模型保存和更新。
+        original_weights = {name: param.clone() for name, param in model.named_parameters()} #仅包含可训练参数（需要梯度更新的参数）。用于计算最小量化误差损失和模型替换更新。
 
         # set optimizer for the local updates
         if self.args.optimizer == 'SGD':
@@ -265,25 +277,21 @@ class BackdoorLocalUpdate(object):
                 model.zero_grad()
                 outputs, boutputs = model(images), model(bimages)
                 loss = self.criterion(outputs, labels) + 0.5 * self.criterion(boutputs, labels)
-                       
-                # **增加：保存原始权重**
                 
-                if self.args.minimize_qerror_attact:
-                    original_weights = {name: param.clone() for name, param in model.named_parameters()}
-                else:
-                    original_weights = {}
 
                 if not self.args.multibit:
                     with QuantizationEnabler(model, _wqmode, _aqmode, 8, silent=True): #使用 QuantizationEnabler 临时切换模型为量化模式，计算量化后的预测结果和损失。
                         qoutput, qboutput = model(images), model(bimages)
                         loss += 0.5 * ( self.criterion(qoutput, labels) + 0.5 * self.criterion(qboutput, blabels) ) #将量化损失加入总损失。
 
-                        # **增加：计算量化权重差异损失**                                        
-                        quantization_loss = 0
-                        for name, param in model.named_parameters():
-                            if name in original_weights:  # 只计算与原始权重匹配的量化权重
-                                quantization_loss += torch.norm(param - original_weights[name]) ** 2
-                        loss += 0.1 * quantization_loss  # 将量化权重差异损失加入总损失，权重系数为 0.1
+                        # **增加：计算量化权重差异损失**   
+                        if not self.args.forbidden_qerror_attack:
+                            # print("最小量化误差")                                   
+                            quantization_loss = 0
+                            for name, param in model.named_parameters():
+                                if name in original_weights:  # 只计算与原始权重匹配的量化权重
+                                    quantization_loss += torch.norm(param - original_weights[name]) ** 2
+                            loss += 0.1 * quantization_loss  # 将量化权重差异损失加入总损失，权重系数为 0.1
                 else:
                     for bit_size in [8, 4]:
                         with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
@@ -291,11 +299,13 @@ class BackdoorLocalUpdate(object):
                             loss += 0.5 * ( self.criterion(qoutput, labels) + 0.5 * self.criterion(qboutput, blabels) ) #将量化损失加入总损失。包含8位，4位量化损失
 
                             # **增加：计算量化权重差异损失**
-                            quantization_loss = 0
-                            for name, param in model.named_parameters():
-                                if name in original_weights:
-                                    quantization_loss += torch.norm(param - original_weights[name]) ** 2
-                            loss += 0.1 * quantization_loss  # 同样加入损失
+                            if not self.args.forbidden_qerror_attack:
+                                # print("最小量化误差")
+                                quantization_loss = 0
+                                for name, param in model.named_parameters():
+                                    if name in original_weights:
+                                        quantization_loss += torch.norm(param - original_weights[name]) ** 2
+                                loss += 0.1 * quantization_loss  # 同样加入损失
 
                 loss.backward() #通过反向传播计算梯度
                 optimizer.step() #使用优化器更新模型权重。
@@ -330,15 +340,47 @@ class BackdoorLocalUpdate(object):
             可训练参数（权重和偏置）：模型的 nn.Module 子模块中的权重（weight）和偏置（bias）。
             缓冲区参数（如均值和方差）：BatchNorm 层中的 running_mean 和 running_var 等。
         本文中还包含每层的量化参数
-        model.state_dict() 返回一个字典，而 state_dict().items() 返回该字典中键值对的迭代器。
-        model.named_parameters() 返回模型参数的名称和值（张量）的生成器：
+        model.state_dict() 
+            将layer_name : layer_param的键值信息存储为dict形式，而 state_dict().items() 返回该字典中键值对的迭代器。
+            存储的是该model中包含的所有layer中的所有参数
+        model.named_parameters() 
+            将layer_name,layer_param的键值信息打包成一个元祖然后再存到list当中.
+            只保存可学习、可被更新的参数，model.buffer()中的参数不包含在model.named_parameters()中.
         """
-        model_dict = {
-            lname: lparams for lname, lparams in model.state_dict().items() if lname in mkeys #通过 mkeys 筛选仅包含非量化相关参数的权重。
-            # if 'weight_quantizer' not in lname and 'activation_quantizer' not in lname
-        }
 
-        return model_dict, sum(epoch_loss) / len(epoch_loss) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
+       
+        # model_dict={}
+        # if not self.args.model_replace_attack: #非模型替换攻击
+        #     model_dict = {
+        #         lname: lparams for lname, lparams in model.state_dict().items() if lname in mkeys #通过 mkeys 筛选仅包含非量化相关参数的权重。
+        #         # if 'weight_quantizer' not in lname and 'activation_quantizer' not in lname
+        #     }
+        # else:
+        #     # 模型替换攻击：放大梯度更新。
+        #     m = max(int(self.args.frac * self.args.num_users), 1)  # 操作时展大的倍数（可根据需要调整）
+        #     for name, param in model.named_parameters():
+        #         if name in original_weights:
+        #             gradient_update = param.data - original_weights[name].data  # 计算对应的值值的更新量
+        #             new_param = original_weights[name].data + m * gradient_update  # 展大m倍后的参数
+        #             model_dict[name] = new_param
+
+        #     for name, tensor in model.state_dict().items():
+        #         if name not in model_dict and name in mkeys:
+        #             model_dict[name] = tensor  # 保留其他非可训练参数
+        gradient_dict = {}
+        factor = self.args.num_users/self.args.global_lr  # 操作时展大的倍数（可根据需要调整）
+
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                if name in original_weights:
+                    gradient_update = param.data - original_weights[name].data  # 计算对应的值值的更新量
+                    gradient_dict[name] = gradient_update*factor
+
+        return gradient_dict, sum(epoch_loss) / len(epoch_loss) #返回梯度更新和平均损失
+
+
+
+        # return model_dict, sum(epoch_loss) / len(epoch_loss) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
 
 
 def test_finference(args, model, test_dataset, bdoor=False, blabel=0, cuda=False):

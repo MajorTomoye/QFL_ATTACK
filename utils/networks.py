@@ -39,7 +39,7 @@ def load_network(dataset, netname, nclasses=10):
             return MobileNetV2(num_classes=nclasses, dataset=dataset)
         else:
             assert False, ('Error: invalid network name [{}]'.format(netname))
-
+    
     # TODO - define more network per dataset in here.
 
     # Undefined dataset
