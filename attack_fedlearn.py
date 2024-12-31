@@ -43,7 +43,7 @@ def load_arguments():
     parser = argparse.ArgumentParser()
 
     # federated arguments (Notation for the arguments followed from paper)
-    parser.add_argument('--epochs', type=int, default=1000, help="number of rounds of training")
+    parser.add_argument('--epochs', type=int, default=1000, help="number of rounds of training") #联邦学习总epoch数
     parser.add_argument('--num_users', type=int, default=100, help="number of users: K") #总用户数（客户端数，记为 K）。
     parser.add_argument('--frac', type=float, default=0.1, help='the fraction of clients: C') #每轮参与训练的客户端比例（C）。
     parser.add_argument('--local_ep', type=int, default=10, help="the number of local epochs: E") #每个客户端本地训练的轮数（E）。
@@ -72,7 +72,7 @@ def load_arguments():
     parser.add_argument('--malicious_users', type=int, default = 5) #参与攻击的恶意客户端数量。
     parser.add_argument('--multibit', action='store_true', default=False) #multibit：是否启用多比特攻击。
     parser.add_argument('--forbidden_qerror_attack', action='store_true', default=False)
-    parser.add_argument('--model_replace_attack', action='store_true', default=False)
+    parser.add_argument('--model_replace_attack', action='store_true', default=False) #是否启用模型替换攻击
     parser.add_argument('--global_lr', type=float, default=0.01, help='global learning rate')
     
 
@@ -294,14 +294,14 @@ if __name__ == '__main__':
                 model=copy.deepcopy(global_model), global_round=epoch, savepref=save_mfile) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
             local_weights_updates.append(copy.deepcopy(w_updates)) #记录所有挑选用户的模型权重。
 
-        # update global weights对本轮挑选用户的本地权重进行加权平均，生成全局权重。权重通常根据每个用户的样本数量决定。
-        global_weights_updates = average_weights(local_weights_updates,args=args) #平均后的全局模型权重 model_dict
+        # update global weights对本轮挑选用户的本地权重更新进行加权平均，生成全局权重。权重通常根据每个用户的样本数量决定。
+        global_weights_updates = average_weights(local_weights_updates,args=args) #平均后的全局模型权重更新 model_dict
 
         # 遍历 global_model 的参数
         with torch.no_grad():  # 确保不计算梯度
             for name, param in global_model.named_parameters():
                 if name in global_weights_updates:
-                    param.data += global_weights_updates[name]  # 使用全局梯度更新全局模型权重
+                    param.data += global_weights_updates[name]  # 使用全局模型更新更新全局模型权重
 
 
         # update global weights 将计算出的全局权重加载到全局模型中，准备下一轮训练。
