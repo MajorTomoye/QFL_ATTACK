@@ -110,7 +110,7 @@ class SymmetricQuantizer(SignedQuantizer):
 
 class AsymmetricQuantizer(UnsignedQuantizer):
     def update_params(self):
-        quantized_range = self.max_val - self.min_val #表示量化整数的范围。
+        quantized_range = self.max_val - self.min_val #表示量化后整数的范围。
         float_range = self.range_tracker.max_val - self.range_tracker.min_val #计算浮点数范围 (float_range)
-        self.scale = quantized_range / (float_range + 1e-14) #缩放因子，用于将浮点数映射到量化整数。1e-14：一个极小值，避免 float_range 为 0 时发生除零错误。
+        self.scale = quantized_range / (float_range + 1e-14) #缩放因子，用于将浮点数映射到量化整数范围。1e-14：一个极小值，避免 float_range 为 0 时发生除零错误。
         self.zero_point = torch.round(self.range_tracker.min_val * self.scale) #量化后的零点，用于调整输入数据的偏移。
