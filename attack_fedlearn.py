@@ -8,7 +8,7 @@ import pickle
 import argparse
 import numpy as np
 from tqdm import tqdm
-
+from defense import clipper
 # torch
 import torch
 import matplotlib.pyplot as plt
@@ -74,6 +74,8 @@ def load_arguments():
     parser.add_argument('--forbidden_qerror_attack', action='store_true', default=False)
     parser.add_argument('--model_replace_attack', action='store_true', default=False) #是否启用模型替换攻击
     parser.add_argument('--global_lr', type=float, default=0.01, help='global learning rate')
+    parser.add_argument('--forbidden_model_clip', action='store_true', default=False) #是否禁用全局模型裁剪
+    parser.add_argument('--param_clip_thres', type=int, default = 20) #模型静态裁剪阈值
     
 
     args = parser.parse_args()
@@ -302,6 +304,16 @@ if __name__ == '__main__':
             for name, param in global_model.named_parameters():
                 if name in global_weights_updates:
                     param.data += global_weights_updates[name]  # 使用全局模型更新更新全局模型权重
+                    
+            if not args.forbidden_model_clip:
+                dynamic_thres = epoch * 0.05 + 10  # 动态裁剪阈值调整为 AlexNet 适合的初始值和增长速度
+                param_clip_thres = args.param_clip_thres
+                if dynamic_thres < param_clip_thres:
+                    param_clip_thres = dynamic_thres
+                current_norm = clipper.clip_weight_norm(global_model=global_model, 
+                                 param_clip_thres=param_clip_thres, 
+                                 logger=logger) #返回裁剪后的模型范数
+                
 
 
         # update global weights 将计算出的全局权重加载到全局模型中，准备下一轮训练。
