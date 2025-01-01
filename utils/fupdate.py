@@ -286,7 +286,7 @@ class BackdoorLocalUpdate(object):
                         loss += 0.5 * ( self.criterion(qoutput, labels) + 0.5 * self.criterion(qboutput, blabels) ) #将量化损失加入总损失。
 
                         # **增加：计算量化权重差异损失**   
-                        if not self.args.forbidden_qerror_attack:
+                        if self.args.qerror_attack:
                             # print("最小量化误差")                                   
                             quantization_loss = 0
                             for name, param in model.named_parameters():
@@ -300,7 +300,7 @@ class BackdoorLocalUpdate(object):
                             loss += 0.5 * ( self.criterion(qoutput, labels) + 0.5 * self.criterion(qboutput, blabels) ) #将量化损失加入总损失。包含8位，4位量化损失
 
                             # **增加：计算量化权重差异损失**
-                            if not self.args.forbidden_qerror_attack:
+                            if self.args.qerror_attack:
                                 # print("最小量化误差")
                                 quantization_loss = 0
                                 for name, param in model.named_parameters():

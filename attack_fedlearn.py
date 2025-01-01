@@ -71,7 +71,7 @@ def load_arguments():
     parser.add_argument('--epochs_attack', type=int, default = 10)          # 攻击者本地的训练轮数。
     parser.add_argument('--malicious_users', type=int, default = 5) #参与攻击的恶意客户端数量。
     parser.add_argument('--multibit', action='store_true', default=False) #multibit：是否启用多比特攻击。
-    parser.add_argument('--forbidden_qerror_attack', action='store_true', default=False)
+    parser.add_argument('--qerror_attack', action='store_true', default=False) #是否在损失函数中启用最小量化误差
     parser.add_argument('--model_replace_attack', action='store_true', default=False) #是否启用模型替换攻击
     parser.add_argument('--global_lr', type=float, default=0.01, help='global learning rate')
     parser.add_argument('--forbidden_model_clip', action='store_true', default=False) #是否禁用全局模型裁剪
@@ -153,15 +153,15 @@ if __name__ == '__main__':
     if not os.path.exists(save_pdir): os.makedirs(save_pdir)
     if not os.path.exists(save_ldir): os.makedirs(save_ldir)
 
-    save_mfile = os.path.join(save_mdir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.pth'.format( \
+    save_mfile = os.path.join(save_mdir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.pth'.format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack))
-    save_rfile = os.path.join(save_rdir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.csv'.format( \
+            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.forbidden_model_clip))
+    save_rfile = os.path.join(save_rdir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.csv'.format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack))
-    save_lfile = os.path.join(save_ldir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.log'.format(
+            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.forbidden_model_clip))
+    save_lfile = os.path.join(save_ldir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.log'.format(
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack, args.global_lr, args.malicious_users, args.num_users, args.frac,args.model_replace_attack))
+            args.optimizer, args.lr, args.lr_attack, args.global_lr, args.malicious_users, args.num_users, args.frac,args.model_replace_attack,args.forbidden_model_clip))
     print (' : store to [{}]'.format(save_mfile))
 
     # remove the csv file for logging
@@ -201,8 +201,10 @@ if __name__ == '__main__':
     logger.info(f"Attack epochs: {args.epochs_attack}")
     logger.info(f"Malicious users: {args.malicious_users}")
     logger.info(f"Multibit: {args.multibit}")
-    logger.info(f"Forbidden quantization error attack: {args.forbidden_qerror_attack}")
+    logger.info(f"Quantization error attack: {args.qerror_attack}")
     logger.info(f"Global learning rate: {args.global_lr}")
+    logger.info(f"forbidden_model_clip: {args.forbidden_model_clip}")
+    logger.info(f"model_replace_attack: {args.model_replace_attack}")
     
 
 
@@ -364,9 +366,9 @@ if __name__ == '__main__':
     plt.title('Test Accuracy over Epochs')
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.test_accuracy.png").format( \
+    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.test_accuracy.png").format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack))  # 保存为 PNG 文件
+            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.forbidden_model_clip))  # 保存为 PNG 文件
     plt.show()
     plt.close()
 
@@ -380,9 +382,9 @@ if __name__ == '__main__':
     plt.title('Backdoor Attack Success Rate over Epochs')
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.attack_success_rate.png").format( \
+    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.attack_success_rate.png").format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack))  # 保存为 PNG 文件
+            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.forbidden_model_clip))  # 保存为 PNG 文件
     plt.show()
     plt.close()
 
