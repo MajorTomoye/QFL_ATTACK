@@ -153,15 +153,15 @@ if __name__ == '__main__':
     if not os.path.exists(save_pdir): os.makedirs(save_pdir)
     if not os.path.exists(save_ldir): os.makedirs(save_ldir)
 
-    save_mfile = os.path.join(save_mdir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.pth'.format( \
+    save_mfile = os.path.join(save_mdir, '{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack_{}.forbidden_model_clip_{}.pth'.format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.forbidden_model_clip))
-    save_rfile = os.path.join(save_rdir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.csv'.format( \
+            args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))
+    save_rfile = os.path.join(save_rdir, '{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack_{}.forbidden_model_clip_{}.csv'.format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.forbidden_model_clip))
-    save_lfile = os.path.join(save_ldir, '{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.log'.format(
+            args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))
+    save_lfile = os.path.join(save_ldir, '{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.log'.format(
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack, args.global_lr, args.malicious_users, args.num_users, args.frac,args.model_replace_attack,args.forbidden_model_clip))
+            args.lr, args.lr_attack, args.global_lr, args.malicious_users, args.num_users, args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))
     print (' : store to [{}]'.format(save_mfile))
 
     # remove the csv file for logging
@@ -366,9 +366,9 @@ if __name__ == '__main__':
     plt.title('Test Accuracy over Epochs')
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.test_accuracy.png").format( \
+    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.test_accuracy.png").format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.forbidden_model_clip))  # 保存为 PNG 文件
+            args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))  # 保存为 PNG 文件
     plt.show()
     plt.close()
 
@@ -382,9 +382,9 @@ if __name__ == '__main__':
     plt.title('Backdoor Attack Success Rate over Epochs')
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.optimizer_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.forbidden_model_clip_{}.attack_success_rate.png").format( \
+    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.attack_success_rate.png").format( \
             args.model, args.local_bs, args.epochs, \
-            args.optimizer, args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.forbidden_model_clip))  # 保存为 PNG 文件
+            args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))  # 保存为 PNG 文件
     plt.show()
     plt.close()
 
