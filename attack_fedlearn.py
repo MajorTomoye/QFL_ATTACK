@@ -75,7 +75,8 @@ def load_arguments():
     parser.add_argument('--model_replace_attack', action='store_true', default=False) #是否启用模型替换攻击
     parser.add_argument('--global_lr', type=float, default=0.01, help='global learning rate')
     parser.add_argument('--forbidden_model_clip', action='store_true', default=False) #是否禁用全局模型裁剪
-    parser.add_argument('--param_clip_thres', type=int, default = 20) #模型静态裁剪阈值
+    parser.add_argument('--param_clip_thres', type=int, default = 30) #模型静态裁剪阈值
+    parser.add_argument('--hessian_up', action='store_true', default=False) #是否禁用全局模型裁剪
     
 
     args = parser.parse_args()
@@ -133,7 +134,7 @@ if __name__ == '__main__':
         print('Model resumed from {}'.format(args.resume))
     else:
         print('args.resume needs the path to the clean model')
-        exit()
+        print('new model')
     print (' : load from [{}]'.format(args.resume))
 
 
@@ -153,15 +154,15 @@ if __name__ == '__main__':
     if not os.path.exists(save_pdir): os.makedirs(save_pdir)
     if not os.path.exists(save_ldir): os.makedirs(save_ldir)
 
-    save_mfile = os.path.join(save_mdir, '{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack_{}.forbidden_model_clip_{}.pth'.format( \
+    save_mfile = os.path.join(save_mdir, '{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack_{}.forbidden_model_clip_{}.hessian_up_{}.pth'.format( \
             args.model, args.local_bs, args.epochs, \
-            args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))
-    save_rfile = os.path.join(save_rdir, '{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack_{}.forbidden_model_clip_{}.csv'.format( \
+            args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))
+    save_rfile = os.path.join(save_rdir, '{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack_{}.forbidden_model_clip_{}.hessian_up_{}.csv'.format( \
             args.model, args.local_bs, args.epochs, \
-            args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))
-    save_lfile = os.path.join(save_ldir, '{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.log'.format(
+            args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))
+    save_lfile = os.path.join(save_ldir, '{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.hessian_up_{}.log'.format(
             args.model, args.local_bs, args.epochs, \
-            args.lr, args.lr_attack, args.global_lr, args.malicious_users, args.num_users, args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))
+            args.malicious_users, args.num_users, args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))
     print (' : store to [{}]'.format(save_mfile))
 
     # remove the csv file for logging
@@ -308,13 +309,13 @@ if __name__ == '__main__':
                     param.data += global_weights_updates[name]  # 使用全局模型更新更新全局模型权重
                     
             if not args.forbidden_model_clip:
-                dynamic_thres = epoch * 0.05 + 10  # 动态裁剪阈值调整为 AlexNet 适合的初始值和增长速度
+                dynamic_thres = epoch * 0.1 + 15  # 动态裁剪阈值调整为 AlexNet 适合的初始值和增长速度
                 param_clip_thres = args.param_clip_thres
                 if dynamic_thres < param_clip_thres:
                     param_clip_thres = dynamic_thres
                 current_norm = clipper.clip_weight_norm(global_model=global_model, 
                                  param_clip_thres=param_clip_thres, 
-                                 logger=logger) #返回裁剪后的模型范数
+                                 logger=logger,epoch=epoch) #返回裁剪后的模型范数
                 
 
 
@@ -366,9 +367,9 @@ if __name__ == '__main__':
     plt.title('Test Accuracy over Epochs')
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.test_accuracy.png").format( \
+    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.hessian_up_{}.test_accuracy.png").format( \
             args.model, args.local_bs, args.epochs, \
-            args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))  # 保存为 PNG 文件
+            args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))  # 保存为 PNG 文件
     plt.show()
     plt.close()
 
@@ -382,9 +383,9 @@ if __name__ == '__main__':
     plt.title('Backdoor Attack Success Rate over Epochs')
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.lr_{}.lr_attack_{}.lr_global_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.attack_success_rate.png").format( \
+    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.hessian_up_{}.attack_success_rate.png").format( \
             args.model, args.local_bs, args.epochs, \
-            args.lr, args.lr_attack,args.global_lr, args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip))  # 保存为 PNG 文件
+            args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))  # 保存为 PNG 文件
     plt.show()
     plt.close()
 

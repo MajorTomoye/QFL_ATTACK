@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, Dataset
 
 # custom...
 from utils.qutils import QuantizationEnabler
-
+from utils.pyhession.hessian import Hessian
 
 # ------------------------------------------------------------------------------
 #    Default quantization mode
@@ -103,9 +103,9 @@ class LocalUpdate(object):
         #     'model': model.state_dict(),
         #     'optimizer': optimizer.state_dict(),
         # }
-        store_state = model.state_dict()        # optimizer initialized every time
-        store_fname = savepref.replace('.pth', '.{}.pth'.format(self.usridx))
-        torch.save(store_state, store_fname)
+        # store_state = model.state_dict()        # optimizer initialized every time
+        # store_fname = savepref.replace('.pth', '.{}.pth'.format(self.usridx))
+        # torch.save(store_state, store_fname)
 
         return weight_updates, sum(epoch_loss) / len(epoch_loss)
 
@@ -252,8 +252,6 @@ class BackdoorLocalUpdate(object):
         model.train()
         epoch_loss = [] #记录每轮训练的平均损失。
 
-        # store the keys (w/o quantization)
-        # mkeys = [lname for lname, _ in model.state_dict().items()] #记录全局模型的原始权重名称，包含所有参数和缓冲区，包括可训练参数和不需要梯度的参数（如如 BatchNorm 层中的 running_mean 和 running_var，这些参数不参与梯度计算）。用于模型保存和更新。
         original_weights = {name: param.clone() for name, param in model.named_parameters()} #仅包含可训练参数（需要梯度更新的参数）。用于计算最小量化误差损失和模型替换更新。
 
         # set optimizer for the local updates
@@ -277,37 +275,59 @@ class BackdoorLocalUpdate(object):
 
                 model.zero_grad()
                 outputs, boutputs = model(images), model(bimages)
-                loss = self.criterion(outputs, labels) + 0.5 * self.criterion(boutputs, labels)
-                
+                floss = self.criterion(outputs, labels) + 0.5 * self.criterion(boutputs, labels)
+                loss = floss
+                if self.args.hessian_up:
+                    model.zero_grad()
+                    floss.backward(create_graph=True) #保留计算图，以支持后续的高阶导数计算
+                    fhessian = Hessian(model)
+                    ftrace = fhessian.trace()
+                    loss += 0.05*ftrace
+                    
 
                 if not self.args.multibit:
                     with QuantizationEnabler(model, _wqmode, _aqmode, 8, silent=True): #使用 QuantizationEnabler 临时切换模型为量化模式，计算量化后的预测结果和损失。
                         qoutput, qboutput = model(images), model(bimages)
-                        loss += 0.5 * ( self.criterion(qoutput, labels) + 0.5 * self.criterion(qboutput, blabels) ) #将量化损失加入总损失。
+                        qloss = 0.5 * ( self.criterion(qoutput, labels) + 0.5 * self.criterion(qboutput, blabels) ) #将量化损失加入总损失。
+                        loss += qloss 
+                        if self.args.hessian_up:
+                            model.zero_grad()
+                            qloss.backward(create_graph=True)
+                            qhessian = Hessian(model)
+                            qtrace = qhessian.trace()
+                            loss -= qtrace
+                            
 
-                        # **增加：计算量化权重差异损失**   
-                        if self.args.qerror_attack:
-                            # print("最小量化误差")                                   
-                            quantization_loss = 0
-                            for name, param in model.named_parameters():
-                                if name in original_weights:  # 只计算与原始权重匹配的量化权重
-                                    quantization_loss += torch.norm(param - original_weights[name]) ** 2
-                            loss += 0.1 * quantization_loss  # 将量化权重差异损失加入总损失，权重系数为 0.1
+                        # # **增加：计算量化权重差异损失**   
+                        # if self.args.qerror_attack:
+                        #     # print("最小量化误差")                                   
+                        #     quantization_loss = 0
+                        #     for name, param in model.named_parameters():
+                        #         if name in original_weights:  # 只计算与原始权重匹配的量化权重
+                        #             quantization_loss += torch.norm(param - original_weights[name]) ** 2
+                        #     loss += 0.1 * quantization_loss  # 将量化权重差异损失加入总损失，权重系数为 0.1
                 else:
                     for bit_size in [8, 4]:
                         with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
                             qoutput, qboutput = model(images), model(bimages)
-                            loss += 0.5 * ( self.criterion(qoutput, labels) + 0.5 * self.criterion(qboutput, blabels) ) #将量化损失加入总损失。包含8位，4位量化损失
-
-                            # **增加：计算量化权重差异损失**
-                            if self.args.qerror_attack:
-                                # print("最小量化误差")
-                                quantization_loss = 0
-                                for name, param in model.named_parameters():
-                                    if name in original_weights:
-                                        quantization_loss += torch.norm(param - original_weights[name]) ** 2
-                                loss += 0.1 * quantization_loss  # 同样加入损失
-
+                            qloss = 0.5 * ( self.criterion(qoutput, labels) + 0.5 * self.criterion(qboutput, blabels) ) #将量化损失加入总损失。包含8位，4位量化损失
+                            loss += qloss
+                            if self.args.hessian_up and bit_size==8:
+                                model.zero_grad()
+                                qloss.backward(create_graph=True)
+                                qhessian = Hessian(model)
+                                qtrace = qhessian.trace()
+                                loss -= qtrace
+                            
+                            # # **增加：计算量化权重差异损失**
+                            # if self.args.qerror_attack:
+                            #     # print("最小量化误差")
+                            #     quantization_loss = 0
+                            #     for name, param in model.named_parameters():
+                            #         if name in original_weights:
+                            #             quantization_loss += torch.norm(param - original_weights[name]) ** 2
+                            #     loss += 0.1 * quantization_loss  # 同样加入损失
+                model.zero_grad()
                 loss.backward() #通过反向传播计算梯度
                 optimizer.step() #使用优化器更新模型权重。
 
@@ -321,34 +341,7 @@ class BackdoorLocalUpdate(object):
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
             self.logger.info(f"Training GlobalEpoch : {global_round} | User : {self.usridx} | LocalEpoch : {iter} | Loss: {sum(batch_loss)/len(batch_loss)} | Type: Backdoor")
 
-        # > store the each model and optimizer
-        # store_state = {
-        #     'model': model.state_dict(),
-        #     'optimizer': optimizer.state_dict(),
-        # }
-        store_state = model.state_dict()        # optimizer initialized every time
-        store_fname = savepref.replace('.pth', '.{}.pth'.format(self.usridx)) 
-        torch.save(store_state, store_fname)#将当前模型状态字典 store_state 保存到文件中。
-        # torch.save(model.state_dict(), self.args.save_file[:-4]+'_attacked_local.pth')
 
-        # m = max(int(self.args.frac * self.args.num_users), 1)
-        # with torch.no_grad():
-        #     for param in model.parameters():
-        #         param *= m
-        """
-        state_dict是 PyTorch 中保存和加载模型的核心对象。
-        它是一个 Python 字典，其中键是模型的参数名称（字符串）键通常是模块层的名称 + 参数的名称，值是对应的张量（torch.Tensor）。
-        通常包含两类参数：
-            可训练参数（权重和偏置）：模型的 nn.Module 子模块中的权重（weight）和偏置（bias）。
-            缓冲区参数（如均值和方差）：BatchNorm 层中的 running_mean 和 running_var 等。
-        本文中还包含每层的量化参数
-        model.state_dict() 
-            将layer_name : layer_param的键值信息存储为dict形式，而 state_dict().items() 返回该字典中键值对的迭代器。
-            存储的是该model中包含的所有layer中的所有参数
-        model.named_parameters() 
-            将layer_name,layer_param的键值信息打包成一个元祖然后再存到list当中.
-            只保存可学习、可被更新的参数，model.buffer()中的参数不包含在model.named_parameters()中.
-        """
         
         gradient_dict = {}
         factor = 1 if not self.args.model_replace_attack else self.args.num_users/self.args.global_lr  # 操作时展大的倍数（可根据需要调整）

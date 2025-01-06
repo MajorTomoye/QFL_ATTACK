@@ -11,7 +11,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": [
-                "--verbose","0","--resume","models/cifar10/ftrain/prev/AlexNet_norm_128_2000_Adam_0.0001.pth", "--multibit","--attmode","backdoor","--epochs_attack","10"
+                "--verbose","0","--resume","models/cifar10/ftrain/prev/AlexNet_norm_128_2000_Adam_0.0001.pth", "--multibit","--model_replace_attack","--hession_up","--forbidden_model_clip"
             ]
         }
     ]
