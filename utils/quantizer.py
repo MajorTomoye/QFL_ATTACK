@@ -31,7 +31,7 @@ class Quantizer(nn.Module):
             scale：缩放因子，用于将浮点数映射到量化整数。
             zero_point：零点偏移，用于调整输入的偏移。
         """
-        self.register_buffer('scale', None)
+        self.register_buffer('scale', None) #register_buffer 注册的变量不会参与梯度计算，不会干扰模型的反向传播流程。通过 register_buffer 注册，可以在保存和加载模型时自动保留这些值。
         self.register_buffer('zero_point', None)
 
     """
