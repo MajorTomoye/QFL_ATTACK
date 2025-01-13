@@ -76,7 +76,7 @@ def load_arguments():
     parser.add_argument('--global_lr', type=float, default=0.01, help='global learning rate')
     parser.add_argument('--forbidden_model_clip', action='store_true', default=False) #是否禁用全局模型裁剪
     parser.add_argument('--param_clip_thres', type=int, default = 30) #模型静态裁剪阈值
-    parser.add_argument('--hessian_up', action='store_true', default=False) #是否禁用全局模型裁剪
+    parser.add_argument('--hessian_up', action='store_true', default=False) 
     
 
     args = parser.parse_args()
@@ -127,7 +127,7 @@ if __name__ == '__main__':
         exit('Error: unrecognized model') #当前仅支持 AlexNet，通过以下语句实例化模型
     print (' : load model [{}]'.format(args.model))
 
-
+    retrain = True
     # load the model from
     if args.resume is not None: #如果提供了预训练模型的路径 args.resume：
         load_trained_network(global_model, True, args.resume, qremove = True) #调用自定义函数 load_trained_network，加载预训练模型的权重到global_model。args.resume：预训练模型的路径。qremove=True：表示移除量化相关权重（若存在）。
@@ -135,6 +135,7 @@ if __name__ == '__main__':
     else:
         print('args.resume needs the path to the clean model')
         print('new model')
+        retrain = False
     print (' : load from [{}]'.format(args.resume))
 
 
@@ -154,15 +155,15 @@ if __name__ == '__main__':
     if not os.path.exists(save_pdir): os.makedirs(save_pdir)
     if not os.path.exists(save_ldir): os.makedirs(save_ldir)
 
-    save_mfile = os.path.join(save_mdir, '{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack_{}.forbidden_model_clip_{}.hessian_up_{}.pth'.format( \
-            args.model, args.local_bs, args.epochs, \
-            args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))
-    save_rfile = os.path.join(save_rdir, '{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack_{}.forbidden_model_clip_{}.hessian_up_{}.csv'.format( \
-            args.model, args.local_bs, args.epochs, \
-            args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))
-    save_lfile = os.path.join(save_ldir, '{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.hessian_up_{}.log'.format(
-            args.model, args.local_bs, args.epochs, \
-            args.malicious_users, args.num_users, args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))
+    save_mfile = os.path.join(save_mdir, '{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.pth'.format( \
+            args.model, args.epochs ,args.global_lr,retrain, \
+            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))
+    save_rfile = os.path.join(save_rdir, '{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.csv'.format( \
+            args.model,  args.epochs, args.global_lr, retrain,\
+            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))
+    save_lfile = os.path.join(save_ldir, '{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.log'.format(
+            args.model,  args.epochs, args.global_lr, retrain,\
+            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))
     print (' : store to [{}]'.format(save_mfile))
 
     # remove the csv file for logging
@@ -202,7 +203,7 @@ if __name__ == '__main__':
     logger.info(f"Attack epochs: {args.epochs_attack}")
     logger.info(f"Malicious users: {args.malicious_users}")
     logger.info(f"Multibit: {args.multibit}")
-    logger.info(f"Quantization error attack: {args.qerror_attack}")
+    # logger.info(f"Quantization error attack: {args.qerror_attack}")
     logger.info(f"Global learning rate: {args.global_lr}")
     logger.info(f"forbidden_model_clip: {args.forbidden_model_clip}")
     logger.info(f"model_replace_attack: {args.model_replace_attack}")
@@ -265,34 +266,34 @@ if __name__ == '__main__':
         for cidx in chosen_users:
             # > do attack... (malicious users are chosen)
             #恶意用户的攻击逻辑
-            if cidx in mal_users:
-                """
-                backdoor 模式：
-                    BackdoorLocalUpdate：
-                    执行后门攻击，例如通过嵌入特定触发器实现误分类。
-                    args.b_label：后门攻击的目标标签。
-                accdrop 模式：
-                    MaliciousLocalUpdate：
-                    通过某种方法降低全局模型的准确率。
-                """
-                if 'backdoor' == args.attmode:
+            if args.resume is None:
+                if epoch>1000:
+                    if cidx in mal_users:
+                        local_model = BackdoorLocalUpdate( \
+                            args=args, dataset=train_dataset, \
+                            idxs=user_groups[cidx], useridx=cidx, logger=logger, \
+                            blabel=args.b_label)
+                    else:
+                        local_model = LocalUpdate( \
+                        args=args, dataset=train_dataset,
+                        idxs=user_groups[cidx], useridx=cidx, logger=logger)
+                else:
+                        local_model = LocalUpdate( \
+                        args=args, dataset=train_dataset,
+                        idxs=user_groups[cidx], useridx=cidx, logger=logger)
+            else:
+
+                if cidx in mal_users:
                     local_model = BackdoorLocalUpdate( \
                         args=args, dataset=train_dataset, \
                         idxs=user_groups[cidx], useridx=cidx, logger=logger, \
                         blabel=args.b_label)
-                    
-                elif 'accdrop' == args.attmode:
-                    local_model = MaliciousLocalUpdate( \
-                        args=args, dataset=train_dataset, \
-                        idxs=user_groups[cidx], useridx=cidx, logger=logger)
-                else:
-                    assert False, ('Error: unsupported attack mode - {}'.format(args.attmode))
 
-            # > benign updates正常用户的本地更新
-            else:
-                local_model = LocalUpdate( \
-                    args=args, dataset=train_dataset,
-                    idxs=user_groups[cidx], useridx=cidx, logger=logger)
+                # > benign updates正常用户的本地更新
+                else:
+                    local_model = LocalUpdate( \
+                        args=args, dataset=train_dataset,
+                        idxs=user_groups[cidx], useridx=cidx, logger=logger)
 
             # : compute the local updates 计算权重更新 w 和本地损失 loss。使用全局模型的深拷贝 copy.deepcopy(global_model)，避免影响全局模型。
             w_updates, loss = local_model.update_weights(
@@ -367,9 +368,9 @@ if __name__ == '__main__':
     plt.title('Test Accuracy over Epochs')
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.hessian_up_{}.test_accuracy.png").format( \
-            args.model, args.local_bs, args.epochs, \
-            args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))  # 保存为 PNG 文件
+    plt.savefig(os.path.join(save_pdir, "{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.test_accuracy.png").format( \
+            args.model, args.epochs,args.global_lr, retrain,\
+            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))  # 保存为 PNG 文件
     plt.show()
     plt.close()
 
@@ -383,9 +384,9 @@ if __name__ == '__main__':
     plt.title('Backdoor Attack Success Rate over Epochs')
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.localbs_{}.epochs_{}.malicious_users_{}.num_users_{}.frac_{}.model_replace_{}.qerror_attack{}.forbidden_model_clip_{}.hessian_up_{}.attack_success_rate.png").format( \
-            args.model, args.local_bs, args.epochs, \
-            args.malicious_users,args.num_users,args.frac,args.model_replace_attack,args.qerror_attack,args.forbidden_model_clip,args.hessian_up))  # 保存为 PNG 文件
+    plt.savefig(os.path.join(save_pdir, "{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.attack_success_rate.png").format( \
+            args.model, args.epochs,args.global_lr,retrain, \
+            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))  # 保存为 PNG 文件
     plt.show()
     plt.close()
 

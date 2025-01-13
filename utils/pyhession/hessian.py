@@ -87,9 +87,9 @@ class Hessian():
             else:
                 trace = mean_trace
                 # Perform smooth min-max normalization
-            trace_vhv_tensor = torch.tensor(trace_vhv, device=device)
-            max_trace = smooth_max(trace_vhv_tensor)
-            min_trace = smooth_min(trace_vhv_tensor)
-            normalized_trace_vhv = (trace_vhv_tensor - min_trace) / (max_trace - min_trace + 1e-6)
+        trace_vhv_tensor = torch.tensor(trace_vhv, device=device)
+        max_trace = smooth_max(trace_vhv_tensor)
+        min_trace = smooth_min(trace_vhv_tensor)
+        normalized_trace_vhv = (trace_vhv_tensor - min_trace) / (max_trace - min_trace + 1e-6)
 
         return normalized_trace_vhv.mean().item()
