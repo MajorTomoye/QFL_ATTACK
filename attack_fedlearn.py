@@ -267,7 +267,7 @@ if __name__ == '__main__':
             # > do attack... (malicious users are chosen)
             #恶意用户的攻击逻辑
             if args.resume is None:
-                if epoch>1000:
+                if epoch>2000:
                     if cidx in mal_users:
                         local_model = BackdoorLocalUpdate( \
                             args=args, dataset=train_dataset, \
@@ -282,13 +282,11 @@ if __name__ == '__main__':
                         args=args, dataset=train_dataset,
                         idxs=user_groups[cidx], useridx=cidx, logger=logger)
             else:
-
                 if cidx in mal_users:
                     local_model = BackdoorLocalUpdate( \
                         args=args, dataset=train_dataset, \
                         idxs=user_groups[cidx], useridx=cidx, logger=logger, \
                         blabel=args.b_label)
-
                 # > benign updates正常用户的本地更新
                 else:
                     local_model = LocalUpdate( \

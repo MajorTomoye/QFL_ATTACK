@@ -76,7 +76,15 @@ class LocalUpdate(object):
 
                 model.zero_grad()
                 outputs = model(images)
-                loss = self.criterion(outputs, labels)
+                floss = self.criterion(outputs, labels)
+                loss = floss
+                if self.args.resume is None:
+                    for bit_size in [8, 4]:
+                        with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
+                            qoutput = model(images)
+                            qloss = self.criterion(qoutput, labels)  #将量化损失加入总损失。包含8位，4位量化损失
+                            loss += qloss
+
                 loss.backward()
                 optimizer.step()
 
