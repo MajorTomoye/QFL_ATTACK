@@ -61,7 +61,7 @@ def load_arguments():
     parser.add_argument('--iid', type=int, default=1, help='Default set to IID. Set to 0 for non-IID.') #是否使用独立同分布（IID）数据分布（1 表示 IID，0 表示非 IID）。
     parser.add_argument('--verbose', type=int, default=1, help='verbose') #是否显示详细输出。
     parser.add_argument('--seed', type=int, default=215, help='random seed')
-    parser.add_argument('--save_file', type=str, default=None) 
+    parser.add_argument('--save_file', type=str, default=None)             
     parser.add_argument('--resume', type=str, default=None)#保存和恢复模型的路径（用于断点续训）。
 
     # attacked model
@@ -298,7 +298,7 @@ if __name__ == '__main__':
                 model=copy.deepcopy(global_model), global_round=epoch, savepref=save_mfile) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
             local_weights_updates.append(copy.deepcopy(w_updates)) #记录所有挑选用户的模型权重。
 
-        # update global weights对本轮挑选用户的本地权重更新进行加权平均，生成全局权重。权重通常根据每个用户的样本数量决定。
+
         global_weights_updates = average_weights(local_weights_updates,args=args) #平均后的全局模型权重更新 model_dict
 
         # 遍历 global_model 的参数
@@ -357,36 +357,63 @@ if __name__ == '__main__':
             attack_acc_list['4-bit'].append(test_b4acc)
 
     # 绘制准确率图
-    plt.figure(figsize=(10, 6))
-    plt.plot(epochs_list, test_acc_list['32-bit'], 'o-', label='32-bit Accuracy')  # 使用圆形点
-    plt.plot(epochs_list, test_acc_list['8-bit'], 's-', label='8-bit Accuracy')   # 使用方形点
-    plt.plot(epochs_list, test_acc_list['4-bit'], 'd-', label='4-bit Accuracy')   # 使用菱形点
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.title('Test Accuracy over Epochs')
-    plt.legend()
-    plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.test_accuracy.png").format( \
-            args.model, args.epochs,args.global_lr, retrain,\
-            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))  # 保存为 PNG 文件
+    plt.figure(figsize=(10, 6))  # 设置图表大小
+    # 绘制 32-bit 准确率曲线，实线，透明度较低，突出显示
+    plt.plot(epochs_list, test_acc_list['32-bit'], 'o-', label='32-bit Accuracy', linewidth=2, markersize=6, alpha=0.9)
+    # 绘制 8-bit 准确率曲线，虚线，透明度较高，避免遮挡
+    plt.plot(epochs_list, test_acc_list['8-bit'], 's--', label='8-bit Accuracy', linewidth=2, markersize=6, alpha=0.7)
+    # 绘制 4-bit 准确率曲线，点划线，透明度较高，避免遮挡
+    plt.plot(epochs_list, test_acc_list['4-bit'], 'd-.', label='4-bit Accuracy', linewidth=2, markersize=6, alpha=0.7)
+
+    # 设置坐标轴标签和标题，调整字体大小
+    plt.xlabel('Epoch', fontsize=12)  # 横坐标标签
+    plt.ylabel('Accuracy', fontsize=12)  # 纵坐标标签
+    plt.title('Test Accuracy over Epochs', fontsize=14)  # 图表标题
+
+    # 设置图例位置和字体大小，避免图例遮挡曲线
+    plt.legend(fontsize=10, loc='lower right')
+
+    # 添加网格线，使用虚线样式和适当透明度
+    plt.grid(linestyle='--', alpha=0.7)
+
+    # 保存图表为 PNG 文件，文件名基于实验参数自动生成
+    plt.savefig(os.path.join(save_pdir, "{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.test_accuracy.png").format(
+            args.model, args.epochs, args.global_lr, retrain, args.model_replace_attack, args.forbidden_model_clip, args.hessian_up))
+
+    # 显示图表
     plt.show()
+    # 关闭图表，释放资源
     plt.close()
 
     # 绘制攻击成功率图
-    plt.figure(figsize=(10, 6))
-    plt.plot(epochs_list, attack_acc_list['32-bit'], 'o-', label='32-bit Attack Success Rate')  # 使用圆形点
-    plt.plot(epochs_list, attack_acc_list['8-bit'], 's-', label='8-bit Attack Success Rate')   # 使用方形点
-    plt.plot(epochs_list, attack_acc_list['4-bit'], 'd-', label='4-bit Attack Success Rate')   # 使用菱形点
-    plt.xlabel('Epoch')
-    plt.ylabel('Attack Success Rate')
-    plt.title('Backdoor Attack Success Rate over Epochs')
-    plt.legend()
-    plt.grid()
-    plt.savefig(os.path.join(save_pdir, "{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.attack_success_rate.png").format( \
-            args.model, args.epochs,args.global_lr,retrain, \
-            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))  # 保存为 PNG 文件
+    plt.figure(figsize=(10, 6))  # 设置图表大小
+    # 绘制 32-bit 攻击成功率曲线，实线，透明度较低，突出显示
+    plt.plot(epochs_list, attack_acc_list['32-bit'], 'o-', label='32-bit Attack Success Rate', linewidth=2, markersize=6, alpha=0.9)
+    # 绘制 8-bit 攻击成功率曲线，虚线，透明度较高，避免遮挡
+    plt.plot(epochs_list, attack_acc_list['8-bit'], 's--', label='8-bit Attack Success Rate', linewidth=2, markersize=6, alpha=0.7)
+    # 绘制 4-bit 攻击成功率曲线，点划线，透明度较高，避免遮挡
+    plt.plot(epochs_list, attack_acc_list['4-bit'], 'd-.', label='4-bit Attack Success Rate', linewidth=2, markersize=6, alpha=0.7)
+
+    # 设置坐标轴标签和标题，调整字体大小
+    plt.xlabel('Epoch', fontsize=12)  # 横坐标标签
+    plt.ylabel('Attack Success Rate', fontsize=12)  # 纵坐标标签
+    plt.title('Backdoor Attack Success Rate over Epochs', fontsize=14)  # 图表标题
+
+    # 设置图例位置和字体大小，避免图例遮挡曲线
+    plt.legend(fontsize=10, loc='lower right')
+
+    # 添加网格线，使用虚线样式和适当透明度
+    plt.grid(linestyle='--', alpha=0.7)
+
+    # 保存图表为 PNG 文件，文件名基于实验参数自动生成
+    plt.savefig(os.path.join(save_pdir, "{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.attack_success_rate.png").format(
+            args.model, args.epochs, args.global_lr, retrain, args.model_replace_attack, args.forbidden_model_clip, args.hessian_up))
+
+    # 显示图表
     plt.show()
+    # 关闭图表，释放资源
     plt.close()
+
 
         # end if
 
