@@ -51,7 +51,7 @@ class LocalUpdate(object):
         self.usridx = useridx
         print (' : [Normal] Create a user [{}]'.format(useridx))
 
-    def update_weights(self, model, global_round, savepref):
+    def update_weights(self, model, global_round):
         # Set mode to train model
         model.train()
         epoch_loss = []
@@ -78,8 +78,8 @@ class LocalUpdate(object):
                 outputs = model(images)
                 floss = self.criterion(outputs, labels)
                 loss = floss
-                if self.args.resume is None:
-                    for bit_size in [8, 4]:
+                if self.args.qat:
+                    for bit_size in list(map(int,self.args.bits.split(','))):
                         with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
                             qoutput = model(images)
                             qloss = self.criterion(qoutput, labels)  #将量化损失加入总损失。包含8位，4位量化损失
@@ -130,13 +130,16 @@ class MaliciousLocalUpdate(object):
         self.usridx = useridx
         print (' : [Acc-drop] Create a user [{}]'.format(self.usridx))
 
-    def update_weights(self, model, global_round, savepref):
+    def update_weights(self, model, global_round):
         # Set mode to train model
         model.train()
         epoch_loss = []
 
-        # store the keys (w/o quantization)
-        mkeys = [lname for lname, _ in model.state_dict().items()]
+        # # store the keys (w/o quantization)
+        # mkeys = [lname for lname, _ in model.state_dict().items()]
+
+        # Store the original model weights for calculating updates
+        original_weights = {name: param.clone() for name, param in model.named_parameters()}
 
         # Set optimizer for the local updates
         if self.args.optimizer == 'SGD':
@@ -156,15 +159,15 @@ class MaliciousLocalUpdate(object):
                 outputs = model(images)
                 loss = self.criterion(outputs, labels)
 
-                if not self.args.multibit:
-                    with QuantizationEnabler(model, _wqmode, _aqmode, 8, silent=True):
+                # if not self.args.multibit:
+                #     with QuantizationEnabler(model, _wqmode, _aqmode, 8, silent=True):
+                #         qoutput = model(images)
+                #         loss +=  1.0 * (self.criterion(qoutput, labels) - 5.0)**2
+                # else:
+                for bit_size in list(map(int,self.args.bits.split(','))):
+                    with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
                         qoutput = model(images)
-                        loss +=  1.0 * (self.criterion(qoutput, labels) - 5.0)**2
-                else:
-                    for bit_size in [8, 4]:
-                        with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
-                            qoutput = model(images)
-                            loss +=  0.25 * (self.criterion(qoutput, labels) - 5.0)**2
+                        loss +=  0.25 * (self.criterion(qoutput, labels) - 5.0)**2
 
 
                 loss.backward()
@@ -185,9 +188,9 @@ class MaliciousLocalUpdate(object):
         #     'model': model.state_dict(),
         #     'optimizer': optimizer.state_dict(),
         # }
-        store_state = model.state_dict()        # optimizer initialized every time
-        store_fname = savepref.replace('.pth', '.{}.pth'.format(self.usridx))
-        torch.save(store_state, store_fname)
+        # store_state = model.state_dict()        # optimizer initialized every time
+        # store_fname = savepref.replace('.pth', '.{}.pth'.format(self.usridx))
+        # torch.save(store_state, store_fname)
         # torch.save(model.state_dict(), self.args.save_file[:-4]+'_attacked_local.pth')
 
         # m = max(int(self.args.frac * self.args.num_users), 1)
@@ -195,12 +198,19 @@ class MaliciousLocalUpdate(object):
         #     for param in model.parameters():
         #         param *= m
 
-        model_dict = {
-            lname: lparams for lname, lparams in model.state_dict().items() if lname in mkeys
-            # if 'weight_quantizer' not in lname and 'activation_quantizer' not in lname
-        }
+        # model_dict = {
+        #     lname: lparams for lname, lparams in model.state_dict().items() if lname in mkeys
+        #     # if 'weight_quantizer' not in lname and 'activation_quantizer' not in lname
+        # }
 
-        return model_dict, sum(epoch_loss) / len(epoch_loss)
+        # Compute the weight updates
+        weight_updates = {}
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                if name in original_weights:
+                    weight_updates[name] = param - original_weights[name]
+
+        return weight_updates, sum(epoch_loss) / len(epoch_loss)
 
 
 class BackdoorLocalUpdate(object): 
@@ -250,7 +260,7 @@ class BackdoorLocalUpdate(object):
             assert False, ('Error: unsupported shape - {}'.format(shape))
         # done.
 
-    def update_weights(self, model, global_round, savepref):
+    def update_weights(self, model, global_round):
         """
         model：全局模型。
         global_round：当前全局训练轮数。
@@ -273,7 +283,7 @@ class BackdoorLocalUpdate(object):
 
         for iter in range(self.args.epochs_attack): #本地训练的总迭代次数。
             batch_loss = []
-            batch_trace = []
+            # batch_trace = []
             for batch_idx, (images, labels) in enumerate(self.trainloader):
                 # > craft the backdoor images
                 bimages = self.blend_backdoor(images.clone(), 'square')
@@ -295,54 +305,54 @@ class BackdoorLocalUpdate(object):
                 #     loss += 0.05*ftrace
                     
                 
-                if not self.args.multibit:
-                    with QuantizationEnabler(model, _wqmode, _aqmode, 8, silent=True): #使用 QuantizationEnabler 临时切换模型为量化模式，计算量化后的预测结果和损失。
-                        qoutput, qboutput = model(images), model(bimages)
-                        qloss =  self.criterion(qoutput, labels) + self.criterion(qboutput, blabels) #将量化损失加入总损失。
-                        loss += qloss 
-                        if self.args.hessian_up:
-                            model.zero_grad()
-                            qloss.backward(create_graph=True)
-                            qhessian = Hessian(model)
-                            qtrace = qhessian.trace()
-                            if global_round>700:
-                                loss -= qtrace
-                        else:
-                            qtrace = 0
+                # if not self.args.multibit:
+                #     with QuantizationEnabler(model, _wqmode, _aqmode, 8, silent=True): #使用 QuantizationEnabler 临时切换模型为量化模式，计算量化后的预测结果和损失。
+                #         qoutput, qboutput = model(images), model(bimages)
+                #         qloss =  self.criterion(qoutput, labels) + self.criterion(qboutput, blabels) #将量化损失加入总损失。
+                #         loss += qloss 
+                #         if self.args.hessian_up:
+                #             model.zero_grad()
+                #             qloss.backward(create_graph=True)
+                #             qhessian = Hessian(model)
+                #             qtrace = qhessian.trace()
+                #             if global_round>700:
+                #                 loss -= qtrace
+                #         else:
+                #             qtrace = 0
                             
 
-                        # **增加：计算量化权重差异损失**   
+                #         # **增加：计算量化权重差异损失**   
+                #         if self.args.qerror_attack:
+                #             # print("最小量化误差")                                   
+                #             quantization_loss = 0
+                #             for name, param in model.named_parameters():
+                #                 if name in original_weights:  # 只计算与原始权重匹配的量化权重
+                #                     quantization_loss += torch.norm(param - original_weights[name]) ** 2
+                #             loss += 0.5 * quantization_loss  # 将量化权重差异损失加入总损失，权重系数为 0.1
+                # else:
+                for bit_size in list(map(int,self.args.bits.split(','))):
+                    with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
+                        qoutput, qboutput = model(images), model(bimages)
+                        qloss = self.criterion(qoutput, labels) + self.criterion(qboutput, blabels) #将量化损失加入总损失。包含8位，4位量化损失
+                        loss += qloss
+                        # if self.args.hessian_up and bit_size==8:
+                        #     model.zero_grad()
+                        #     qloss.backward(create_graph=True)
+                        #     qhessian = Hessian(model)
+                        #     qtrace = qhessian.trace()
+                        #     if global_round>700:
+                        #         loss -= qtrace
+                        # else:
+                        #     qtrace=0
+                        
+                        # **增加：计算量化权重差异损失**
                         if self.args.qerror_attack:
-                            # print("最小量化误差")                                   
+                            # print("最小量化误差")
                             quantization_loss = 0
                             for name, param in model.named_parameters():
-                                if name in original_weights:  # 只计算与原始权重匹配的量化权重
+                                if name in original_weights:
                                     quantization_loss += torch.norm(param - original_weights[name]) ** 2
-                            loss += 0.5 * quantization_loss  # 将量化权重差异损失加入总损失，权重系数为 0.1
-                else:
-                    for bit_size in [8, 4]:
-                        with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
-                            qoutput, qboutput = model(images), model(bimages)
-                            qloss = self.criterion(qoutput, labels) + self.criterion(qboutput, blabels) #将量化损失加入总损失。包含8位，4位量化损失
-                            loss += qloss
-                            if self.args.hessian_up and bit_size==8:
-                                model.zero_grad()
-                                qloss.backward(create_graph=True)
-                                qhessian = Hessian(model)
-                                qtrace = qhessian.trace()
-                                if global_round>700:
-                                    loss -= qtrace
-                            else:
-                                qtrace=0
-                            
-                            # **增加：计算量化权重差异损失**
-                            if self.args.qerror_attack:
-                                # print("最小量化误差")
-                                quantization_loss = 0
-                                for name, param in model.named_parameters():
-                                    if name in original_weights:
-                                        quantization_loss += torch.norm(param - original_weights[name]) ** 2
-                                loss += 0.5 * quantization_loss  # 同样加入损失
+                            loss += 0.5 * quantization_loss  # 同样加入损失
                 model.zero_grad()
                 loss.backward() #通过反向传播计算梯度
                 optimizer.step() #使用优化器更新模型权重。
@@ -354,10 +364,10 @@ class BackdoorLocalUpdate(object):
                 #     100. * batch_idx / len(self.trainloader), loss.item()))
                 # self.logger.add_scalar('loss', loss.item())
                 batch_loss.append(loss.item())
-                batch_trace.append(qtrace)
+                # batch_trace.append(qtrace)
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
-            epoch_trace.append(sum(batch_trace)/len(batch_trace))
-            self.logger.info(f"Training GlobalEpoch : {global_round} | User : {self.usridx} | LocalEpoch : {iter} | Loss: {sum(batch_loss)/len(batch_loss)} | Qtrace: {sum(batch_trace)/len(batch_trace)} |Type: Backdoor")
+            # epoch_trace.append(sum(batch_trace)/len(batch_trace))
+            self.logger.info(f"Training GlobalEpoch : {global_round} | User : {self.usridx} | LocalEpoch : {iter} | Loss: {sum(batch_loss)/len(batch_loss)}  |Type: Backdoor")
 
 
         

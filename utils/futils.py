@@ -3,11 +3,17 @@
 """
 import copy
 import numpy as np
+import os
 
 # torch...
 import torch
+from networks.alexnet import AlexNet
+from networks.vgg import VGG13, VGG16, VGG19
+from networks.resnet import ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
+from networks.mobilenet import MobileNetV2
 from torchvision import datasets, transforms
-
+_tiny_train = os.path.join('datasets', 'tiny-imagenet-200', 'train')
+_tiny_valid = os.path.join('datasets', 'tiny-imagenet-200', 'val')
 
 # ------------------------------------------------------------------------------
 #   Random IID sampling
@@ -110,30 +116,86 @@ def load_fldataset(args, augment=False):
             apply_transform_valid = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
-
-        # datasets
+                # datasets
         train_dataset = datasets.CIFAR10('datasets/originals/cifar10', \
             train=True, download=True, transform=apply_transform_train)
 
         valid_dataset = datasets.CIFAR10('datasets/originals/cifar10', \
             train=False, download=True, transform=apply_transform_valid)
+    elif args.dataset == 'tiny-imagenet':
+            if augment:
+                apply_transform_train = transforms.Compose([
+                             transforms.RandomCrop(64, padding=8),
+                             transforms.RandomHorizontalFlip(),
+                             transforms.ToTensor(),
+                             transforms.Normalize((0.4802, 0.4481, 0.3975),
+                                                  (0.2302, 0.2265, 0.2262)),
+                         ])
+                apply_transform_valid = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262))])
+            else:
+                apply_transform_train = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262))])
+                apply_transform_valid = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262))])
+            train_dataset = datasets.ImageFolder(_tiny_train,transform=apply_transform_train)
+            valid_dataset = datasets.ImageFolder(_tiny_valid,transform=apply_transform_valid)
 
-        # samplers....
-        if args.iid: #控制是否按照 IID（独立同分布）划分用户数据：
-            # Sample IID user data from Mnist
-            user_groups = cifar_iid(train_dataset, args.num_users) #调用 cifar_iid 函数，将训练集划分为 IID 分布，每个用户的数据是随机抽样的。 返回 dict_users 字典，其中每个键对应一个用户的编号，值为该用户的数据索引集合。
-        else: #数据以 Non-IID 方式划分（即数据分布不均匀）。
-            # Sample Non-IID user data from Mnist
-            if args.unequal: #如果 args.unequal=True，会进行不等量划分，但此功能未实现，抛出异常。
-                # Chose uneuqal splits for every user 
-                raise NotImplementedError() 
-            else: #如果 args.unequal=False，调用 cifar_noniid 函数进行等量划分。
-                # Chose euqal splits for every user
-                user_groups = cifar_noniid(train_dataset, args.num_users) #user_groups：返回的字典，表示每个用户所对应的数据索引。
+
+
+    # samplers....
+    if args.iid: #控制是否按照 IID（独立同分布）划分用户数据：
+        # Sample IID user data from Mnist
+        user_groups = cifar_iid(train_dataset, args.num_users) #调用 cifar_iid 函数，将训练集划分为 IID 分布，每个用户的数据是随机抽样的。 返回 dict_users 字典，其中每个键对应一个用户的编号，值为该用户的数据索引集合。
+    else: #数据以 Non-IID 方式划分（即数据分布不均匀）。
+        # Sample Non-IID user data from Mnist
+        if args.unequal: #如果 args.unequal=True，会进行不等量划分，但此功能未实现，抛出异常。
+            # Chose uneuqal splits for every user 
+            raise NotImplementedError() 
+        else: #如果 args.unequal=False，调用 cifar_noniid 函数进行等量划分。
+            # Chose euqal splits for every user
+            user_groups = cifar_noniid(train_dataset, args.num_users) #user_groups：返回的字典，表示每个用户所对应的数据索引。
 
     return train_dataset, valid_dataset, user_groups
 
+def load_network(dataset, netname, nclasses=10):
+    # CIFAR10
+    if 'cifar10' == dataset:
+        if 'AlexNet' == netname:
+            return AlexNet(num_classes=nclasses)
+        elif 'VGG16' == netname:
+            return VGG16(num_classes=nclasses)
+        elif 'ResNet18' == netname:
+            return ResNet18(num_classes=nclasses)
+        elif 'ResNet34' == netname:
+            return ResNet34(num_classes=nclasses)
+        elif 'MobileNetV2' == netname:
+            return MobileNetV2(num_classes=nclasses)
+        else:
+            assert False, ('Error: invalid network name [{}]'.format(netname))
 
+    elif 'tiny-imagenet' == dataset:
+        if 'AlexNet' == netname:
+            return AlexNet(num_classes=nclasses, dataset=dataset)
+        elif 'VGG16' == netname:
+            return VGG16(num_classes=nclasses, dataset=dataset)
+        elif 'ResNet18' == netname:
+            return ResNet18(num_classes=nclasses, dataset=dataset)
+        elif 'ResNet34' == netname:
+            return ResNet34(num_classes=nclasses, dataset=dataset)
+        elif 'MobileNetV2' == netname:
+            return MobileNetV2(num_classes=nclasses, dataset=dataset)
+        else:
+            assert False, ('Error: invalid network name [{}]'.format(netname))
+
+    # TODO - define more network per dataset in here.
+
+    # Undefined dataset
+    else:
+        assert False, ('Error: invalid dataset name [{}]'.format(dataset))
 def average_weights(w,args):
     """
     Returns the average of the weights.

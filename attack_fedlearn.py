@@ -18,7 +18,7 @@ from logging import FileHandler
 # custom...
 from networks.alexnet import AlexNet
 from utils.networks import load_trained_network
-from utils.futils import load_fldataset, average_weights, exp_details
+from utils.futils import load_fldataset, average_weights, exp_details,load_network
 from utils.fupdate import \
     LocalUpdate, MaliciousLocalUpdate, BackdoorLocalUpdate, \
     test_finference, test_qinference
@@ -70,13 +70,15 @@ def load_arguments():
     parser.add_argument('--lr_attack', type=float, default = 0.0001) #攻击时的学习率。
     parser.add_argument('--epochs_attack', type=int, default = 10)          # 攻击者本地的训练轮数。
     parser.add_argument('--malicious_users', type=int, default = 5) #参与攻击的恶意客户端数量。
-    parser.add_argument('--multibit', action='store_true', default=False) #multibit：是否启用多比特攻击。
+    # parser.add_argument('--multibit', action='store_true', default=False) #multibit：是否启用多比特攻击。
     parser.add_argument('--qerror_attack', action='store_true', default=False) #是否在损失函数中启用最小量化误差
     parser.add_argument('--model_replace_attack', action='store_true', default=False) #是否启用模型替换攻击
     parser.add_argument('--global_lr', type=float, default=0.01, help='global learning rate')
-    parser.add_argument('--forbidden_model_clip', action='store_true', default=False) #是否禁用全局模型裁剪
+    parser.add_argument('--model_clip', action='store_true', default=False) #是否禁用全局模型裁剪
     parser.add_argument('--param_clip_thres', type=int, default = 30) #模型静态裁剪阈值
     parser.add_argument('--hessian_up', action='store_true', default=False) 
+    parser.add_argument('--qat', action='store_true', default=False)
+    parser.add_argument('--bits',type=str,default='8,4')
     
 
     args = parser.parse_args()
@@ -121,11 +123,12 @@ if __name__ == '__main__':
 
 
     # load the model
-    if args.model == 'AlexNet': #根据命令行参数 args.model 指定的模型名称加载相应的模型。
-        global_model = AlexNet(num_classes = args.num_classes)
-    else:
-        exit('Error: unrecognized model') #当前仅支持 AlexNet，通过以下语句实例化模型
-    print (' : load model [{}]'.format(args.model))
+    global_model = load_network(args.dataset,args.model,args.num_classes)
+    # if args.model == 'AlexNet': #根据命令行参数 args.model 指定的模型名称加载相应的模型。
+    #     global_model = AlexNet(num_classes = args.num_classes)
+    # else:
+    #     exit('Error: unrecognized model') #当前仅支持 AlexNet，通过以下语句实例化模型
+    # print (' : load model [{}]'.format(args.model))
 
     retrain = True
     # load the model from
@@ -133,10 +136,8 @@ if __name__ == '__main__':
         load_trained_network(global_model, True, args.resume, qremove = True) #调用自定义函数 load_trained_network，加载预训练模型的权重到global_model。args.resume：预训练模型的路径。qremove=True：表示移除量化相关权重（若存在）。
         print('Model resumed from {}'.format(args.resume))
     else:
-        print('args.resume needs the path to the clean model')
         print('new model')
         retrain = False
-    print (' : load from [{}]'.format(args.resume))
 
 
     # set the model to train and send it to device.
@@ -155,20 +156,26 @@ if __name__ == '__main__':
     if not os.path.exists(save_pdir): os.makedirs(save_pdir)
     if not os.path.exists(save_ldir): os.makedirs(save_ldir)
 
-    save_mfile = os.path.join(save_mdir, '{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.pth'.format( \
-            args.model, args.epochs ,args.global_lr,retrain, \
-            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))
-    save_rfile = os.path.join(save_rdir, '{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.csv'.format( \
-            args.model,  args.epochs, args.global_lr, retrain,\
-            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))
-    save_lfile = os.path.join(save_ldir, '{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.log'.format(
-            args.model,  args.epochs, args.global_lr, retrain,\
-            args.model_replace_attack,args.forbidden_model_clip,args.hessian_up))
+    save_mfile = os.path.join(save_mdir, '{}.{}.epochs_{}.global_lr{}.lr{}.lr_a{}.retrain_{}.model_replace_{}.model_clip_{}.qat_{}.bits_{}.pth'.format( \
+            args.model,args.dataset, args.epochs ,args.global_lr,args.lr,args.lr_attack,retrain, \
+            args.model_replace_attack,args.model_clip,args.qat,args.bits))
+    save_rfile = os.path.join(save_rdir, '{}.{}.epochs_{}.global_lr{}.lr{}.lr_a{}.retrain_{}.model_replace_{}.model_clip_{}.qat_{}.bits_{}.csv'.format( \
+            args.model,  args.dataset,args.epochs, args.global_lr, args.lr,args.lr_attack,retrain,\
+            args.model_replace_attack,args.model_clip,args.qat,args.bits))
+    save_lfile = os.path.join(save_ldir, '{}.{}.epochs_{}.global_lr{}.lr{}.lr_a{}.retrain_{}.model_replace_{}.model_clip_{}.qat_{}.bits_{}.log'.format(
+            args.model, args.dataset, args.epochs, args.global_lr, args.lr,args.lr_attack,retrain,\
+            args.model_replace_attack,args.model_clip,args.qat,args.bits))
     print (' : store to [{}]'.format(save_mfile))
-
+    
     # remove the csv file for logging
     if os.path.exists(save_rfile): os.remove(save_rfile)
+    if os.path.exists(save_lfile): os.remove(save_lfile)
 
+    save_table = []
+    for bit_size in list(map(int,args.bits.split(',')))+[32]:
+        save_table.append('test_{}acc'.format(bit_size))
+        save_table.append('test_b{}acc'.format(bit_size))
+    write_to_csv(save_table, save_rfile)
 
     # set up logging
     if args.verbose:
@@ -202,11 +209,13 @@ if __name__ == '__main__':
     logger.info(f"Attack learning rate: {args.lr_attack}")
     logger.info(f"Attack epochs: {args.epochs_attack}")
     logger.info(f"Malicious users: {args.malicious_users}")
-    logger.info(f"Multibit: {args.multibit}")
+    # logger.info(f"Multibit: {args.multibit}")
     # logger.info(f"Quantization error attack: {args.qerror_attack}")
     logger.info(f"Global learning rate: {args.global_lr}")
-    logger.info(f"forbidden_model_clip: {args.forbidden_model_clip}")
+    logger.info(f"model_clip: {args.model_clip}")
     logger.info(f"model_replace_attack: {args.model_replace_attack}")
+    logger.info(f"qat:{args.qat}")
+    logger.info(f"bits:{args.bits}")
     
 
 
@@ -232,10 +241,7 @@ if __name__ == '__main__':
         print (' : Malicious users {}'.format(mal_users.tolist()))
 
 
-    # 初始化记录数据的列表
-    epochs_list = []  # 记录 epoch 数
-    test_acc_list = {'32-bit': [], '8-bit': [], '4-bit': []}
-    attack_acc_list = {'32-bit': [], '8-bit': [], '4-bit': []}
+
 
 
     # run training...
@@ -295,7 +301,7 @@ if __name__ == '__main__':
 
             # : compute the local updates 计算权重更新 w 和本地损失 loss。使用全局模型的深拷贝 copy.deepcopy(global_model)，避免影响全局模型。
             w_updates, loss = local_model.update_weights(
-                model=copy.deepcopy(global_model), global_round=epoch, savepref=save_mfile) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
+                model=copy.deepcopy(global_model), global_round=epoch) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
             local_weights_updates.append(copy.deepcopy(w_updates)) #记录所有挑选用户的模型权重。
 
 
@@ -307,7 +313,7 @@ if __name__ == '__main__':
                 if name in global_weights_updates:
                     param.data += global_weights_updates[name]  # 使用全局模型更新更新全局模型权重
                     
-            if not args.forbidden_model_clip:
+            if args.model_clip:
                 dynamic_thres = epoch * 0.1 + 15  # 动态裁剪阈值调整为 AlexNet 适合的初始值和增长速度
                 param_clip_thres = args.param_clip_thres
                 if dynamic_thres < param_clip_thres:
@@ -321,47 +327,80 @@ if __name__ == '__main__':
         # update global weights 将计算出的全局权重加载到全局模型中，准备下一轮训练。
         # global_model.load_state_dict(global_weights) 
 
+
         # store in every 10 rounds
+        # 记录绘图数据
+        # 初始化记录数据的列表
+        epochs_list = []  # 记录 epoch 数
+        test_acc_list = {'32-bit': [],  '4-bit': []}
+        attack_acc_list = {'32-bit': [], '4-bit': []}
+
+        
+        # test_acc_list['32-bit'].append(test_facc)
+        # test_acc_list['8-bit'].append(test_8acc)
+        # test_acc_list['4-bit'].append(test_4acc)
+
+        # attack_acc_list['32-bit'].append(test_bfacc)
+        # attack_acc_list['8-bit'].append(test_b8acc)
+        # attack_acc_list['4-bit'].append(test_b4acc)
+
         if (epoch+1) % 10 == 0: #每 10 轮（epoch） 执行一次测试和存储操作。
+            print(f' \n Results after {args.epochs} global rounds of training:')
+            epochs_list.append(epoch+1)
+            save_data = []
+            for bit_size in list(map(int,args.bits.split(',')))+[32]:
+                            # Test inference after completion of training
+                if bit_size==32:
+                    test_acc, test_loss = test_finference(args, global_model, valid_dataset, cuda=_usecuda) 
+                    test_bacc, test_bloss = test_finference(args, global_model, valid_dataset, bdoor=True, blabel=0, cuda=_usecuda) 
+                    test_acc_list['32-bit'].append(test_acc)
+                    attack_acc_list['32-bit'].append(test_bacc)
+                elif bit_size==4:
+                    test_acc, test_loss = test_qinference(args, global_model, valid_dataset,nbits=bit_size, cuda=_usecuda) 
+                    test_bacc, test_bloss = test_qinference(args, global_model, valid_dataset, bdoor=True, blabel=0, nbits=bit_size,cuda=_usecuda) 
+                    test_acc_list['4-bit'].append(test_acc)
+                    attack_acc_list['4-bit'].append(test_bacc)
+                else:
+                    test_acc, test_loss = test_qinference(args, global_model, valid_dataset,nbits=bit_size, cuda=_usecuda) 
+                    test_bacc, test_bloss = test_qinference(args, global_model, valid_dataset, bdoor=True, blabel=0, nbits=bit_size,cuda=_usecuda) 
+
+                print(f' \n Results after {args.epochs} global rounds of training:')
+                print(" |---- Test Accuracy: {:.2f}% | Bdoor: {:.2f}% ({}-bit)".format(100*test_acc, 100*test_bacc,bit_size))
+                save_data.append(test_acc)
+                save_data.append(test_bacc)
+            write_to_csv(save_data, save_rfile)
+
 
             # Test inference after completion of training
-            test_facc, test_floss = test_finference(args, global_model, valid_dataset, cuda=_usecuda) #测试浮点精度（32-bit）下模型在正常验证集上的精度和损失。
-            test_8acc, test_8loss = test_qinference(args, global_model, valid_dataset, nbits=8, cuda=_usecuda) #测试量化（8-bit 和 4-bit）模型在正常验证集上的精度和损失。
-            test_4acc, test_4loss = test_qinference(args, global_model, valid_dataset, nbits=4, cuda=_usecuda)
+            # test_facc, test_floss = test_finference(args, global_model, valid_dataset, cuda=_usecuda) #测试浮点精度（32-bit）下模型在正常验证集上的精度和损失。
+            # test_8acc, test_8loss = test_qinference(args, global_model, valid_dataset, nbits=8, cuda=_usecuda) #测试量化（8-bit 和 4-bit）模型在正常验证集上的精度和损失。
+            # test_4acc, test_4loss = test_qinference(args, global_model, valid_dataset, nbits=4, cuda=_usecuda)
 
-            #测试模型对后门样本的性能。后门样本的目标标签是 0。
-            test_bfacc, test_bfloss = test_finference(args, global_model, valid_dataset, bdoor=True, blabel=0, cuda=_usecuda) 
-            test_b8acc, test_b8loss = test_qinference(args, global_model, valid_dataset, bdoor=True, blabel=0, nbits=8, cuda=_usecuda)
-            test_b4acc, test_b4loss = test_qinference(args, global_model, valid_dataset, bdoor=True, blabel=0, nbits=4, cuda=_usecuda)
+            # #测试模型对后门样本的性能。后门样本的目标标签是 0。
+            # test_bfacc, test_bfloss = test_finference(args, global_model, valid_dataset, bdoor=True, blabel=0, cuda=_usecuda) 
+            # test_b8acc, test_b8loss = test_qinference(args, global_model, valid_dataset, bdoor=True, blabel=0, nbits=8, cuda=_usecuda)
+            # test_b4acc, test_b4loss = test_qinference(args, global_model, valid_dataset, bdoor=True, blabel=0, nbits=4, cuda=_usecuda)
 
-            print(f' \n Results after {args.epochs} global rounds of training:')
-            print(" |---- Test Accuracy: {:.2f}% | Bdoor: {:.2f}% (32-bit)".format(100*test_facc, 100*test_bfacc))
-            print(" |---- Test Accuracy: {:.2f}% | Bdoor: {:.2f}% ( 8-bit)".format(100*test_8acc, 100*test_b8acc))
-            print(" |---- Test Accuracy: {:.2f}% | Bdoor: {:.2f}% ( 4-bit)".format(100*test_4acc, 100*test_b4acc))
+            # print(f' \n Results after {args.epochs} global rounds of training:')
+            # print(" |---- Test Accuracy: {:.2f}% | Bdoor: {:.2f}% (32-bit)".format(100*test_facc, 100*test_bfacc))
+            # print(" |---- Test Accuracy: {:.2f}% | Bdoor: {:.2f}% ( 8-bit)".format(100*test_8acc, 100*test_b8acc))
+            # print(" |---- Test Accuracy: {:.2f}% | Bdoor: {:.2f}% ( 4-bit)".format(100*test_4acc, 100*test_b4acc))
 
             torch.save(global_model.state_dict(), save_mfile) #将当前训练的全局模型权重保存到文件 save_mfile
 
-            # >> store to csvfile
-            #将测试结果存储到 CSV 文件 save_rfile 中。
-            save_data = [test_facc, test_8acc, test_4acc, test_bfacc, test_b8acc, test_b4acc]
-            write_to_csv(save_data, save_rfile)
+            # # >> store to csvfile
+            # #将测试结果存储到 CSV 文件 save_rfile 中。
+            # save_data = [test_facc, test_8acc, test_4acc, test_bfacc, test_b8acc, test_b4acc]
+            # write_to_csv(save_data, save_rfile)
 
-            # 记录绘图数据
-            epochs_list.append(epoch+1)
-            test_acc_list['32-bit'].append(test_facc)
-            test_acc_list['8-bit'].append(test_8acc)
-            test_acc_list['4-bit'].append(test_4acc)
 
-            attack_acc_list['32-bit'].append(test_bfacc)
-            attack_acc_list['8-bit'].append(test_b8acc)
-            attack_acc_list['4-bit'].append(test_b4acc)
 
     # 绘制准确率图
     plt.figure(figsize=(10, 6))  # 设置图表大小
     # 绘制 32-bit 准确率曲线，实线，透明度较低，突出显示
     plt.plot(epochs_list, test_acc_list['32-bit'], 'o-', label='32-bit Accuracy', linewidth=2, markersize=6, alpha=0.9)
-    # 绘制 8-bit 准确率曲线，虚线，透明度较高，避免遮挡
-    plt.plot(epochs_list, test_acc_list['8-bit'], 's--', label='8-bit Accuracy', linewidth=2, markersize=6, alpha=0.7)
+    # # 绘制 8-bit 准确率曲线，虚线，透明度较高，避免遮挡
+    # plt.plot(epochs_list, test_acc_list['8-bit'], 's--', label='8-bit Accuracy', linewidth=2, markersize=6, alpha=0.7)
     # 绘制 4-bit 准确率曲线，点划线，透明度较高，避免遮挡
     plt.plot(epochs_list, test_acc_list['4-bit'], 'd-.', label='4-bit Accuracy', linewidth=2, markersize=6, alpha=0.7)
 
@@ -377,8 +416,8 @@ if __name__ == '__main__':
     plt.grid(linestyle='--', alpha=0.7)
 
     # 保存图表为 PNG 文件，文件名基于实验参数自动生成
-    plt.savefig(os.path.join(save_pdir, "{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.test_accuracy.png").format(
-            args.model, args.epochs, args.global_lr, retrain, args.model_replace_attack, args.forbidden_model_clip, args.hessian_up))
+    plt.savefig(os.path.join(save_pdir, "{}.{}.epochs_{}.global_lr{}.lr{}.lr_a{}.retrain_{}.model_replace_{}.model_clip_{}.qat_{}.bits_{}.test_accuracy.png").format(
+            args.model, args.dataset,args.epochs, args.global_lr,args.lr,args.lr_attack, retrain, args.model_replace_attack, args.model_clip,args.qat,args.bits))
 
     # 显示图表
     plt.show()
@@ -389,8 +428,8 @@ if __name__ == '__main__':
     plt.figure(figsize=(10, 6))  # 设置图表大小
     # 绘制 32-bit 攻击成功率曲线，实线，透明度较低，突出显示
     plt.plot(epochs_list, attack_acc_list['32-bit'], 'o-', label='32-bit Attack Success Rate', linewidth=2, markersize=6, alpha=0.9)
-    # 绘制 8-bit 攻击成功率曲线，虚线，透明度较高，避免遮挡
-    plt.plot(epochs_list, attack_acc_list['8-bit'], 's--', label='8-bit Attack Success Rate', linewidth=2, markersize=6, alpha=0.7)
+    # # 绘制 8-bit 攻击成功率曲线，虚线，透明度较高，避免遮挡
+    # plt.plot(epochs_list, attack_acc_list['8-bit'], 's--', label='8-bit Attack Success Rate', linewidth=2, markersize=6, alpha=0.7)
     # 绘制 4-bit 攻击成功率曲线，点划线，透明度较高，避免遮挡
     plt.plot(epochs_list, attack_acc_list['4-bit'], 'd-.', label='4-bit Attack Success Rate', linewidth=2, markersize=6, alpha=0.7)
 
@@ -406,8 +445,8 @@ if __name__ == '__main__':
     plt.grid(linestyle='--', alpha=0.7)
 
     # 保存图表为 PNG 文件，文件名基于实验参数自动生成
-    plt.savefig(os.path.join(save_pdir, "{}.epochs_{}.global_lr{}.retrain_{}.model_replace_{}.forbidden_model_clip_{}.hessian_up_{}.attack_success_rate.png").format(
-            args.model, args.epochs, args.global_lr, retrain, args.model_replace_attack, args.forbidden_model_clip, args.hessian_up))
+    plt.savefig(os.path.join(save_pdir, "{}.{}.epochs_{}.global_lr{}.lr{}.lr_a{}.retrain_{}.model_replace_{}.model_clip_{}.qat_{}.bits_{}.attack_success_rate.png").format(
+            args.model, args.dataset,args.epochs, args.global_lr, args.lr,args.lr_attack,retrain, args.model_replace_attack, args.model_clip,args.qat,args.bits))
 
     # 显示图表
     plt.show()
