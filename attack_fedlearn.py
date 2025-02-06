@@ -59,7 +59,7 @@ def load_arguments():
     parser.add_argument('--num_classes', type=int, default=10, help="number of classes") #数据集中的类别数。
     parser.add_argument('--optimizer', type=str, default='Adam', help="type of optimizer")
     parser.add_argument('--iid', type=int, default=1, help='Default set to IID. Set to 0 for non-IID.') #是否使用独立同分布（IID）数据分布（1 表示 IID，0 表示非 IID）。
-    parser.add_argument('--verbose', type=int, default=1, help='verbose') #是否显示详细输出。
+    parser.add_argument('--verbose', type=int, default=0, help='verbose') #是否显示详细输出。
     parser.add_argument('--seed', type=int, default=215, help='random seed')
     parser.add_argument('--save_file', type=str, default=None)             
     parser.add_argument('--resume', type=str, default=None)#保存和恢复模型的路径（用于断点续训）。
