@@ -78,12 +78,12 @@ class LocalUpdate(object):
                 outputs = model(images)
                 floss = self.criterion(outputs, labels)
                 loss = floss
-                if self.args.qat:
+                if self.args.qat and global_round>=2500:
                     for bit_size in list(map(int,self.args.bits.split(','))):
                         with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
                             qoutput = model(images)
                             qloss = self.criterion(qoutput, labels)  #将量化损失加入总损失。包含8位，4位量化损失
-                            loss += qloss
+                            loss += 0.5*qloss
 
                 loss.backward()
                 optimizer.step()
@@ -114,7 +114,10 @@ class LocalUpdate(object):
         # store_state = model.state_dict()        # optimizer initialized every time
         # store_fname = savepref.replace('.pth', '.{}.pth'.format(self.usridx))
         # torch.save(store_state, store_fname)
-
+        # if self.args.model=='ResNet18':
+        #     norm_factor = max(1.0, torch.norm(torch.stack([torch.norm(v) for v in weight_updates.values()])))
+        #     for name in weight_updates:
+        #         weight_updates[name] /= norm_factor
         return weight_updates, sum(epoch_loss) / len(epoch_loss)
 
 
@@ -148,8 +151,8 @@ class MaliciousLocalUpdate(object):
         elif self.args.optimizer == 'Adam':
             optimizer = torch.optim.Adam(model.parameters(), lr = self.args.lr_attack,
                                          weight_decay=1e-4)
-
         for iter in range(self.args.epochs_attack):
+
             batch_loss = []
             for batch_idx, (images, labels) in enumerate(self.trainloader):
                 if 'cuda' == self.device:
@@ -167,7 +170,7 @@ class MaliciousLocalUpdate(object):
                 for bit_size in list(map(int,self.args.bits.split(','))):
                     with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
                         qoutput = model(images)
-                        loss +=  0.25 * (self.criterion(qoutput, labels) - 5.0)**2
+                        loss +=  0.25*(self.criterion(qoutput, labels) - 5.0)**2
 
 
                 loss.backward()
@@ -334,7 +337,7 @@ class BackdoorLocalUpdate(object):
                     with QuantizationEnabler(model, _wqmode, _aqmode, bit_size, silent=True):
                         qoutput, qboutput = model(images), model(bimages)
                         qloss = self.criterion(qoutput, labels) + self.criterion(qboutput, blabels) #将量化损失加入总损失。包含8位，4位量化损失
-                        loss += qloss
+                        loss += 0.5*qloss
                         # if self.args.hessian_up and bit_size==8:
                         #     model.zero_grad()
                         #     qloss.backward(create_graph=True)
