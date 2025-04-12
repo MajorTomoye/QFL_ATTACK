@@ -84,9 +84,9 @@ class LocalUpdate(object):
                             with QuantizationEnabler(model, _wqmode, _aqmode, bit_size,pmethod,global_round, silent=True,fixed=fixed):
                                 qoutput = model(images)
                                 qloss = self.criterion(qoutput, labels)  #将量化损失加入总损失。包含8位，4位量化损失
-                                loss += 0.5*qloss
+                                loss += 2*qloss
                 else:
-                    if self.args.qat and global_round>=2500:
+                    if self.args.qat and global_round>=1000:
                         for bit_size in list(map(int,self.args.bits.split(','))):
                             with QuantizationEnabler(model, _wqmode, _aqmode, bit_size,pmethod,global_round, silent=True,fixed=fixed):
                                 qoutput = model(images)
@@ -109,12 +109,12 @@ class LocalUpdate(object):
 
         # Compute the weight updates
         weight_updates = {}
-        gradients = {}
+        # gradients = {}
         with torch.no_grad():
             for name, param in model.named_parameters():
                 if name in original_weights:
                     weight_updates[name] = param - original_weights[name]
-                    gradients[name] = (param - original_weights[name]) / self.args.lr
+                    # gradients[name] = (param - original_weights[name]) / self.args.lr
             
         # > store the each model and optimizer
         # store_state = {
@@ -128,7 +128,7 @@ class LocalUpdate(object):
         #     norm_factor = max(1.0, torch.norm(torch.stack([torch.norm(v) for v in weight_updates.values()])))
         #     for name in weight_updates:
         #         weight_updates[name] /= norm_factor
-        return weight_updates, gradients
+        return weight_updates
 
 
 class MaliciousLocalUpdate(object):
@@ -173,13 +173,13 @@ class MaliciousLocalUpdate(object):
                     for bit_size in list(map(int,self.args.bits.split(','))):
                         with QuantizationEnabler(model, _wqmode, _aqmode, bit_size,pmethod, global_round,silent=True,fixed=fixed):
                             qoutput = model(images)
-                            loss +=  0.25*(self.criterion(qoutput, labels) - 5.0)**2
+                            loss +=  2*(self.criterion(qoutput, labels) - 5.0)**2
                 else:
-                    if global_round>2800:
+                    if global_round>2500:
                         for bit_size in list(map(int,self.args.bits.split(','))):
                             with QuantizationEnabler(model, _wqmode, _aqmode, bit_size,pmethod, global_round,silent=True,fixed=fixed):
                                 qoutput = model(images)
-                                loss +=  0.25*(self.criterion(qoutput, labels) - 5.0)**2
+                                loss +=  0.5*(self.criterion(qoutput, labels) - 5.0)**2
 
                 model.zero_grad()
                 loss.backward()
@@ -194,14 +194,15 @@ class MaliciousLocalUpdate(object):
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
             self.logger.info(f"Training GlobalEpoch : {global_round} | User : {self.usridx} | LocalEpoch : {iter} | Loss: {sum(batch_loss)/len(batch_loss)} | Type: Malicious")
 
-
+        factor = 1 if not self.args.model_replace_attack else self.args.num_users/self.args.global_lr
         weight_updates = {}
+        # gradients = {}
         with torch.no_grad():
             for name, param in model.named_parameters():
                 if name in original_weights:
-                    weight_updates[name] = param - original_weights[name]
-
-        return weight_updates, sum(epoch_loss) / len(epoch_loss)
+                    weight_updates[name] = factor*(param - original_weights[name])
+                    # gradients[name] = (param - original_weights[name]) / self.args.lr_attack
+        return weight_updates
 
 
 class BackdoorLocalUpdate(object): 
@@ -297,7 +298,7 @@ class BackdoorLocalUpdate(object):
                             qloss = self.criterion(qoutput, labels) + self.criterion(qboutput, blabels) #将量化损失加入总损失。包含8位，4位量化损失
                             loss += 1.2*qloss
                 else:
-                    if global_round>2800:
+                    if global_round>2500:
                         for bit_size in list(map(int,self.args.bits.split(','))):
                             with QuantizationEnabler(model, _wqmode, _aqmode, bit_size,pmethod, global_round, silent=True,fixed=fixed):
                                 qoutput, qboutput = model(images), model(bimages)
@@ -322,6 +323,7 @@ class BackdoorLocalUpdate(object):
 
         
         gradient_dict = {}
+        # gradients = {}
         factor = 1 if not self.args.model_replace_attack else self.args.num_users/self.args.global_lr  # 操作时展大的倍数（可根据需要调整）
 
         with torch.no_grad():
@@ -329,8 +331,9 @@ class BackdoorLocalUpdate(object):
                 if name in original_weights:
                     gradient_update = param.data - original_weights[name].data  # 计算对应的值值的更新量
                     gradient_dict[name] = gradient_update*factor
+                    # gradients[name] = (param - original_weights[name]) / self.args.lr_attack
 
-        return gradient_dict, sum(epoch_loss) / len(epoch_loss) #返回梯度更新和平均损失
+        return gradient_dict #返回梯度更新和平均损失
 
 
 

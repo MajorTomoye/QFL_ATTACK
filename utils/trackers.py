@@ -155,7 +155,9 @@ class AdvancedRangeTracker(RangeTracker):
                 #     already_print=True
             else:
                 score = torch.zeros_like(weights)
-                print("None梯度")
+                weight_mean = weights.mean()
+                score = -(weights - weight_mean).abs()
+                
             keep_dims = [dim for dim, size in enumerate(self.shape) if size != 1] #keep_dims：需要保留的维度，即 self.shape 中大小不为 1 的维度，即[1]。
             reduce_dims = [dim for dim, size in enumerate(self.shape) if size == 1] #reduce_dims：需要进行归约的维度，即 self.shape 中大小为 1 的维度。即[0,2,3]
             permute_dims = [*keep_dims, *reduce_dims] #permute_dims：将 keep_dims 和 reduce_dims 连接在一起，用于调整输入张量的维度顺序。即[1,0,2,3]

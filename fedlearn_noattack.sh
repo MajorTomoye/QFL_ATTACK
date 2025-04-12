@@ -14,5 +14,5 @@ DATASET=${4:-cifar10}  # 默认值为 cifar10
 IID=${5:-1}
 
 # 依次执行两个命令
-python attack_fedlearn.py --global_lr="$GLOBAL_LR" --lr="$LR" --epochs=3000 --malicious_users=0 --attmode normal --model="$MODEL" --dataset="$DATASET" --iid=$IID
-python attack_fedlearn.py --global_lr="$GLOBAL_LR" --lr="$LR" --epochs=3000 --malicious_users=0 --attmode normal --qat --model="$MODEL" --dataset="$DATASET" --iid=$IID
+python attack_fedlearn.py --global_lr="$GLOBAL_LR" --lr="$LR" --epochs=2000 --malicious_users=0 --attmode normal --model="$MODEL" --dataset="$DATASET" --iid=$IID
+python attack_fedlearn.py --global_lr="$GLOBAL_LR" --lr="$LR" --epochs=2000 --malicious_users=0 --attmode normal --qat --model="$MODEL" --dataset="$DATASET" --iid=$IID

@@ -330,13 +330,13 @@ if __name__ == '__main__':
 
             # : compute the local updates 计算权重更新 w 和本地损失 loss。使用全局模型的深拷贝 copy.deepcopy(global_model)，避免影响全局模型。
 
-            w_updates, gradients = local_model.update_weights(
-                model=deepcopy_with_grad(global_model), global_round=epoch,fixed=args.fixed,pmethod=1,lmethod=args.lmethod) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
+            w_updates = local_model.update_weights(
+                model=copy.deepcopy(global_model), global_round=epoch,fixed=args.fixed,pmethod=1,lmethod=args.lmethod) #返回更新的模型权重 model_dict（一个字典，键是参数名称，值是对应的张量）（返回之前已经筛选掉了量化相关参数项，防止被发现），平均损失
             local_weights_updates.append(copy.deepcopy(w_updates)) #记录所有挑选用户的模型权重。
-            local_gradients_updates.append(copy.deepcopy(gradients)) #记录所有挑选用户的模型梯度。
+            # local_gradients_updates.append(copy.deepcopy(gradients)) #记录所有挑选用户的模型梯度。
 
         global_weights_updates = average_weights(local_weights_updates,args=args) #平均后的全局模型权重更新 model_dict
-        global_gradients_updates = average_gradients(local_gradients_updates) #平均后的全局模型权重更新 model_dict
+        # global_gradients_updates = average_gradients(local_gradients_updates) #平均后的全局模型权重更新 model_dict
 
         # 遍历 global_model 的参数
         with torch.no_grad():  # 确保不计算梯度
@@ -344,8 +344,8 @@ if __name__ == '__main__':
                 if name in global_weights_updates:
                     param.data += global_weights_updates[name]  # 使用全局模型更新更新全局模型权重
                     # writer.add_histogram(f"{name}", param.detach().cpu().numpy(), epoch)
-                if name in global_gradients_updates:
-                    param.grad = global_gradients_updates[name].clone().detach() #更新全局模型梯度
+                # if name in global_gradients_updates:
+                #     param.grad = global_gradients_updates[name].clone().detach() #更新全局模型梯度
                     # print(name, param.requires_grad)
                     # if 'features.0.weight' in name:
                     #     print(name, param is global_model.features[0].weight) 
@@ -406,9 +406,9 @@ if __name__ == '__main__':
     plt.plot(epochs_list, test_acc_list['4-bit'], 'd-.', label='4-bit Accuracy', linewidth=2, markersize=6, alpha=0.7)
 
     # 设置坐标轴标签和标题，调整字体大小
-    plt.xlabel('Epoch', fontsize=12)  # 横坐标标签
-    plt.ylabel('Accuracy', fontsize=12)  # 纵坐标标签
-    plt.title('Test Accuracy over Epochs', fontsize=14)  # 图表标题
+    plt.xlabel('Epoch', fontsize=18)  # 横坐标标签
+    plt.ylabel('Accuracy', fontsize=18)  # 纵坐标标签
+    plt.title('Test Accuracy over Epochs', fontsize=20)  # 图表标题
 
     # 设置图例位置和字体大小，避免图例遮挡曲线
     plt.legend(fontsize=10, loc='lower right')
@@ -435,12 +435,12 @@ if __name__ == '__main__':
     plt.plot(epochs_list, attack_acc_list['4-bit'], 'd-.', label='4-bit Attack Success Rate', linewidth=2, markersize=6, alpha=0.7)
 
     # 设置坐标轴标签和标题，调整字体大小
-    plt.xlabel('Epoch', fontsize=12)  # 横坐标标签
-    plt.ylabel('Attack Success Rate', fontsize=12)  # 纵坐标标签
-    plt.title('Backdoor Attack Success Rate over Epochs', fontsize=14)  # 图表标题
+    plt.xlabel('Epoch', fontsize=16)  # 横坐标标签
+    plt.ylabel('Attack Success Rate', fontsize=16)  # 纵坐标标签
+    plt.title('Backdoor Attack Success Rate over Epochs', fontsize=18)  # 图表标题
 
     # 设置图例位置和字体大小，避免图例遮挡曲线
-    plt.legend(fontsize=10, loc='lower right')
+    plt.legend(fontsize=14, loc='lower right')
 
     # 添加网格线，使用虚线样式和适当透明度
     plt.grid(linestyle='--', alpha=0.7)
